@@ -1,0 +1,37 @@
+# Backend Dockerfile - Multi-stage build
+
+FROM golang:1.25-alpine AS builder
+WORKDIR /app
+
+# Установим необходимые утилиты
+RUN apk add --no-cache git
+
+# Копируем go.mod и go.sum
+COPY go.mod go.sum ./
+
+# Скачиваем зависимости
+RUN go mod download
+
+# Копируем весь код
+COPY . .
+
+# Собираем бинарник
+RUN CGO_ENABLED=0 GOOS=linux go build -o parking-server ./cmd/app
+
+# Production stage
+FROM alpine:3.18
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+COPY --from=builder /app/parking-server /app/parking-server
+
+# Устанавливаем порт
+EXPOSE 8080
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+
+# Запускаем приложение
+CMD ["./parking-server"]
+

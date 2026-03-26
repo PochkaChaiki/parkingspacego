@@ -1,0 +1,60 @@
+services:
+  mongo:
+    image: mongo:7.0
+    container_name: parking-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - parking-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.backend
+    container_name: parking-backend
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      - MONGO_URI=${MONGO_URI}
+      - MONGO_DB=${MONGO_DB}
+      - PORT=${PORT}
+    ports:
+      - "8080:8080"
+    networks:
+      - parking-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: parking-frontend
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=${API_URL}
+    ports:
+      - "3000:3000"
+    networks:
+      - parking-net
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
+
+networks:
+  parking-net:
+    driver: bridge
+
