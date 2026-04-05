@@ -20,13 +20,13 @@ type Record struct {
 	ID primitive.ObjectID `bson:"_id,omitempty" json:"id"`
 	// Token        string             `bson:"token"`
 	// PassCode     string     `bson:"pass_code" json:"pass_code"`
-	ClientName   string     `bson:"client_name" json:"client_name"`
-	PhoneNumber  string     `bson:"phone_number" json:"phone_number"`
-	LicensePlate string     `bson:"license_plate" json:"license_plate"`
-	SpotNumber   int        `bson:"spot_number" json:"spot_number"`
-	StartTime    time.Time  `bson:"start_time" json:"start_time"`
-	EndTime      *time.Time `bson:"end_time,omitempty" json:"end_time,omitempty"`
-	Status       string     `bson:"status" json:"status"`
+	ClientName   string    `bson:"client_name" json:"client_name"`
+	PhoneNumber  string    `bson:"phone_number" json:"phone_number"`
+	LicensePlate string    `bson:"license_plate" json:"license_plate"`
+	SpotNumber   int       `bson:"spot_number" json:"spot_number"`
+	StartTime    time.Time `bson:"start_time" json:"start_time"`
+	EndTime      time.Time `bson:"end_time,omitempty" json:"end_time,omitempty"`
+	Status       string    `bson:"status" json:"status"`
 	// Role         Role       `bson:"role" json:"role"`
 }
 

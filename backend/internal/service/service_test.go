@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/pochkachaiki/parkingspace/internal/model"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // mockRepository имитирует Repository для тестирования сервиса
@@ -15,16 +17,52 @@ type mockRepository struct {
 
 func newMockRepository() *mockRepository {
 	return &mockRepository{
-		records: make(map[string]*model.Record),
+		records: map[string]*model.Record{
+			"+79999999999": {
+				ID:           primitive.NewObjectID(),
+				ClientName:   "Egor",
+				PhoneNumber:  "+79999999999",
+				LicensePlate: "A123BC123",
+				SpotNumber:   1,
+				StartTime:    time.Now().UTC(),
+				EndTime:      time.Now().UTC().Add(time.Hour),
+				Status:       "active",
+			},
+			"+79999999998": {
+				ID:           primitive.NewObjectID(),
+				ClientName:   "Arisha",
+				PhoneNumber:  "+79999999998",
+				LicensePlate: "A123BC122",
+				SpotNumber:   2,
+				StartTime:    time.Now().UTC(),
+				EndTime:      time.Now().UTC().Add(time.Hour),
+				Status:       "active",
+			},
+			"+79999999997": {
+				ID:           primitive.NewObjectID(),
+				ClientName:   "Kirill",
+				PhoneNumber:  "+79999999997",
+				LicensePlate: "A123BC121",
+				SpotNumber:   3,
+				StartTime:    time.Now().UTC(),
+				EndTime:      time.Now().UTC().Add(time.Hour),
+				Status:       "active",
+			},
+		},
 	}
 }
 
 func (m *mockRepository) Create(ctx context.Context, rec *model.Record) (*model.Record, error) {
+	if rec.PhoneNumber == "00000000000" {
+		return nil, errors.New("internal error")
+	}
+
 	m.records[rec.PhoneNumber] = rec
 	return rec, nil
 }
 
 func (m *mockRepository) GetAll(ctx context.Context) ([]*model.Record, error) {
+
 	var all []*model.Record
 	for _, rec := range m.records {
 		all = append(all, rec)
@@ -33,17 +71,24 @@ func (m *mockRepository) GetAll(ctx context.Context) ([]*model.Record, error) {
 }
 
 func (m *mockRepository) GetByPhone(ctx context.Context, phone string) (*model.Record, error) {
+	if phone == "00000000000" {
+		return nil, errors.New("internal error")
+	}
+
 	if rec, exists := m.records[phone]; exists {
 		return rec, nil
 	}
 	return nil, nil
 }
 
-func (m *mockRepository) Update(ctx context.Context, id string, endTime *time.Time) error {
+func (m *mockRepository) Update(ctx context.Context, id string, endTime time.Time) error {
+	if id == "" {
+		return errors.New("internal error")
+	}
 	for _, rec := range m.records {
 		if rec.ID.Hex() == id {
 			rec.EndTime = endTime
-			rec.Status = "completed"
+			rec.Status = "active"
 			return nil
 		}
 	}
@@ -51,182 +96,290 @@ func (m *mockRepository) Update(ctx context.Context, id string, endTime *time.Ti
 }
 
 func (m *mockRepository) DeleteByPhone(ctx context.Context, phone string) error {
+	if phone == "00000000000" {
+		return errors.New("internal error")
+	}
 	delete(m.records, phone)
 	return nil
 }
 
 // ============= Tests (RED/GREEN TDD) =============
 
-// TestServiceStartSession - тест создания новой сессии парковки
-func TestServiceStartSession(t *testing.T) {
-	ctx := context.Background()
+func TestService_StartSession(t *testing.T) {
 	repo := newMockRepository()
 	srv := NewService(repo)
 
-	req := &model.RecordDto{
-		ClientName:   "Иван",
-		PhoneNumber:  "+79991234567",
-		LicensePlate: "A123BC140",
-		SpotNumber:   42,
+	tests := []struct {
+		name       string
+		dto        *model.RecordDto
+		wantCode   int
+		wantStatus model.StatusName
+		wantErr    bool
+	}{
+		{
+			name: "creating session success",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "+78888888888",
+				LicensePlate: "A321BC321",
+				SpotNumber:   100,
+			},
+			wantStatus: model.Success,
+			wantErr:    false,
+		},
+		{
+			name: "session exist",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "+78888888888",
+				LicensePlate: "A321BC321",
+				SpotNumber:   101,
+			},
+			wantStatus: model.Failure,
+			wantErr:    false,
+		},
+		{
+			name: "spot occupied",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "+78888888881",
+				LicensePlate: "A321BC321",
+				SpotNumber:   100,
+			},
+			wantStatus: model.Occupied,
+			wantErr:    false,
+		},
+		{
+			name:       "json was invalid",
+			dto:        nil,
+			wantStatus: model.Failure,
+			wantErr:    true,
+		},
+		{
+			name: "internal error",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "00000000000",
+				LicensePlate: "A321BC321",
+				SpotNumber:   100,
+			},
+			wantStatus: model.Failure,
+			wantErr:    true,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 
-	resp, err := srv.StartSession(ctx, req)
-	if err != nil {
-		t.Fatalf("StartSession failed: %v", err)
-	}
+			status, err := srv.StartSession(ctx, tt.dto)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("error was not expected")
+					return
+				}
+			}
 
-	if resp == nil {
-		t.Fatalf("expected response, got nil")
-	}
+			if status != tt.wantStatus {
+				t.Fatalf("response status want %s, got %s", tt.wantStatus, status)
+				return
+			}
 
-	if resp.Status != model.Success {
-		t.Fatalf("expected status 'success', got %q", resp.Status)
-	}
-
-	// Проверяем что запись создана в репо
-	rec, err := repo.GetByPhone(ctx, "+79991234567")
-	if err != nil {
-		t.Fatalf("GetByPhone failed: %v", err)
-	}
-
-	if rec == nil {
-		t.Fatalf("expected record in repository")
-	}
-
-	if rec.ClientName != "Иван" {
-		t.Fatalf("expected ClientName 'Иван', got %q", rec.ClientName)
+			if status == model.Success {
+				rec, _ := repo.GetByPhone(ctx, tt.dto.PhoneNumber)
+				if rec == nil {
+					t.Fatalf("session did not started")
+					return
+				}
+			}
+		})
 	}
 }
 
-// TestServiceStartSessionDuplicate - тест когда пользователь уже имеет активную сессию
-func TestServiceStartSessionDuplicate(t *testing.T) {
-	ctx := context.Background()
+func TestService_GetSession(t *testing.T) {
 	repo := newMockRepository()
 	srv := NewService(repo)
 
-	phone := "+79991234567"
-
-	// Первая сессия
-	req1 := &model.RecordDto{
-		ClientName:   "Иван",
-		PhoneNumber:  phone,
-		LicensePlate: "A123BC140",
-		SpotNumber:   42,
+	tests := []struct {
+		name    string
+		phone   string
+		wantDto *model.RecordDto
+		wantErr bool
+	}{
+		{
+			name:  "get session successful",
+			phone: "+79999999999",
+			wantDto: &model.RecordDto{
+				ClientName:   "Egor",
+				PhoneNumber:  "+79999999999",
+				LicensePlate: "A123BC123",
+				SpotNumber:   1,
+			},
+			wantErr: false,
+		},
+		{
+			name:    "session don't exist",
+			phone:   "+78888888888",
+			wantDto: nil,
+			wantErr: false,
+		},
+		{
+			name:    "internal error",
+			phone:   "00000000000",
+			wantDto: nil,
+			wantErr: true,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
 
-	_, err := srv.StartSession(ctx, req1)
-	if err != nil {
-		t.Fatalf("first StartSession failed: %v", err)
-	}
+			resp, err := srv.GetSession(ctx, tt.phone)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("error was not expected")
+					return
+				}
+			}
 
-	// Вторая сессия с тем же номером
-	req2 := &model.RecordDto{
-		ClientName:   "Иван",
-		PhoneNumber:  phone,
-		LicensePlate: "A123BC141",
-		SpotNumber:   43,
-	}
+			if tt.wantDto == nil {
+				if resp != nil {
+					t.Fatalf("expected nil got not nil")
+				}
+				return
+			} else {
+				if resp == nil {
+					t.Fatalf("expected not nil got nil")
+					return
+				}
+			}
 
-	resp, err := srv.StartSession(ctx, req2)
-	if err != nil {
-		t.Fatalf("second StartSession failed: %v", err)
-	}
+			if !(resp.ClientName == tt.wantDto.ClientName &&
+				resp.SpotNumber == tt.wantDto.SpotNumber &&
+				resp.PhoneNumber == tt.wantDto.PhoneNumber &&
+				resp.LicensePlate == tt.wantDto.LicensePlate) {
+				t.Fatalf("dto want: %v, got: %v", *tt.wantDto, resp)
+				return
+			}
 
-	if resp.Status != model.Failure {
-		t.Fatalf("expected status 'failure' for duplicate, got %q", resp.Status)
+		})
 	}
 }
 
-// TestServiceGetSession - тест получения информации о сессии
-func TestServiceGetSession(t *testing.T) {
-	ctx := context.Background()
+func TestService_ProlongSession(t *testing.T) {
 	repo := newMockRepository()
 	srv := NewService(repo)
 
-	phone := "+79991234567"
-
-	// Создаем сессию
-	req := &model.RecordDto{
-		ClientName:   "Иван",
-		PhoneNumber:  phone,
-		LicensePlate: "A123BC140",
-		SpotNumber:   42,
+	tests := []struct {
+		name     string
+		phone    string
+		duration string
+		wantDto  bool
+		wantErr  bool
+	}{
+		{
+			name:     "prolong session successful",
+			phone:    "+79999999999",
+			duration: "1h",
+			wantDto:  true,
+			wantErr:  false,
+		},
+		{
+			name:     "session don't exist",
+			phone:    "+78888888888",
+			duration: "1h",
+			wantDto:  false,
+			wantErr:  false,
+		},
+		{
+			name:     "internal error",
+			phone:    "00000000000",
+			duration: "1h",
+			wantDto:  false,
+			wantErr:  true,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			record, err := repo.GetByPhone(ctx, tt.phone)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("error occured: %v", err)
+				}
+				return
+			}
+			var resEndTime time.Time
+			if record != nil {
+				dur, _ := time.ParseDuration(tt.duration)
+				resEndTime = record.EndTime.Add(dur)
+			}
+			resp, err := srv.ProlongSession(ctx, tt.phone, tt.duration)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("error was not expected: %v", err)
+					return
+				}
+			}
 
-	_, err := srv.StartSession(ctx, req)
-	if err != nil {
-		t.Fatalf("StartSession failed: %v", err)
-	}
+			if resp == nil {
+				if tt.wantDto {
+					t.Fatalf("expected resp but got nil")
+					return
+				}
+				return
+			}
 
-	// Получаем информацию
-	dto, err := srv.GetSession(ctx, phone)
-	if err != nil {
-		t.Fatalf("GetSession failed: %v", err)
-	}
+			if !resp.EndTime.Equal(resEndTime) {
+				t.Fatalf("endTime want: %v, got: %v", resEndTime, *resp.EndTime)
+				return
+			}
 
-	if dto == nil {
-		t.Fatalf("expected RecordDto, got nil")
-	}
-
-	if dto.ClientName != "Иван" {
-		t.Fatalf("expected ClientName 'Иван', got %q", dto.ClientName)
-	}
-
-	if dto.PhoneNumber != phone {
-		t.Fatalf("expected phone %q, got %q", phone, dto.PhoneNumber)
+		})
 	}
 }
 
-// TestServiceProlongSession - тест продления сессии парковки
-func TestServiceProlongSession(t *testing.T) {
-	ctx := context.Background()
+func TestService_StopSession(t *testing.T) {
 	repo := newMockRepository()
 	srv := NewService(repo)
 
-	phone := "+79991234567"
-
-	// Создаем сессию
-	req := &model.RecordDto{
-		ClientName:   "Иван",
-		PhoneNumber:  phone,
-		LicensePlate: "A123BC140",
-		SpotNumber:   42,
+	tests := []struct {
+		name    string
+		phone   string
+		wantErr bool
+		// wantDto  *model.RecordDto
+	}{
+		{
+			name:    "stop session successful",
+			phone:   "+79999999999",
+			wantErr: false,
+		},
+		{
+			name:    "session don't exist",
+			phone:   "+78888888888",
+			wantErr: false,
+		},
+		{
+			name:    "internal error",
+			phone:   "00000000000",
+			wantErr: true,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			err := srv.StopSession(ctx, tt.phone)
+			if err != nil {
+				if !tt.wantErr {
+					t.Fatalf("error was not expected but got: %v", err)
+				}
+				return
+			}
 
-	_, err := srv.StartSession(ctx, req)
-	if err != nil {
-		t.Fatalf("StartSession failed: %v", err)
-	}
+			if rec, err := repo.GetByPhone(ctx, tt.phone); rec != nil || err != nil {
+				t.Fatalf("record not deleted for %v, err: %v", tt.phone, err)
+			}
 
-	// Получаем начальную сессию
-	initialDto, err := srv.GetSession(ctx, phone)
-	if err != nil {
-		t.Fatalf("GetSession failed: %v", err)
-	}
-
-	initialEndTime := initialDto.EndTime
-
-	// Продляем на 1 час
-	duration := time.Hour
-	updatedDto, err := srv.ProlongSession(ctx, phone, duration)
-	if err != nil {
-		t.Fatalf("ProlongSession failed: %v", err)
-	}
-
-	if updatedDto == nil {
-		t.Fatalf("expected RecordDto, got nil")
-	}
-
-	if updatedDto.EndTime == nil {
-		t.Fatalf("expected EndTime to be set")
-	}
-
-	// Если было начальное EndTime, проверяем что оно увеличено
-	if initialEndTime != nil {
-		expectedEndTime := initialEndTime.Add(duration)
-		if !updatedDto.EndTime.Equal(expectedEndTime) {
-			t.Fatalf("expected EndTime ~%v, got %v", expectedEndTime, *updatedDto.EndTime)
-		}
+		})
 	}
 }
 

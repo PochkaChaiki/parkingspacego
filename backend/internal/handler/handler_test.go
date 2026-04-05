@@ -4,295 +4,431 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/pochkachaiki/parkingspace/internal/model"
-	"github.com/pochkachaiki/parkingspace/internal/repository"
-	"github.com/pochkachaiki/parkingspace/internal/service"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// === Minimal Mock Collection for Handler Tests ===
-type testMockCollection struct {
-	mu      sync.Mutex
-	records map[primitive.ObjectID]*model.Record
+type ServiceMock struct {
+	store map[string]*model.Record
 }
 
-func newTestMockCollection() *testMockCollection {
-	return &testMockCollection{records: make(map[primitive.ObjectID]*model.Record)}
-}
-
-func (m *testMockCollection) InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	rec := document.(*model.Record)
-	m.records[rec.ID] = rec
-	return &mongo.InsertOneResult{InsertedID: rec.ID}, nil
-}
-
-func (m *testMockCollection) Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var results []*model.Record
-	for _, rec := range m.records {
-		results = append(results, rec)
+func NewServiceMock() *ServiceMock {
+	return &ServiceMock{
+		store: map[string]*model.Record{
+			"+79999999999": {
+				ID:           primitive.NewObjectID(),
+				ClientName:   "Egor",
+				PhoneNumber:  "+79999999999",
+				LicensePlate: "A123BC123",
+				SpotNumber:   1,
+				StartTime:    time.Now().UTC(),
+				EndTime:      time.Now().UTC().Add(time.Hour),
+				Status:       "active",
+			},
+			"+79999999998": {
+				ID:           primitive.NewObjectID(),
+				ClientName:   "Arisha",
+				PhoneNumber:  "+79999999998",
+				LicensePlate: "A123BC122",
+				SpotNumber:   2,
+				StartTime:    time.Now().UTC(),
+				EndTime:      time.Now().UTC().Add(time.Hour),
+				Status:       "active",
+			},
+			"+79999999997": {
+				ID:           primitive.NewObjectID(),
+				ClientName:   "Kirill",
+				PhoneNumber:  "+79999999997",
+				LicensePlate: "A123BC121",
+				SpotNumber:   3,
+				StartTime:    time.Now().UTC(),
+				EndTime:      time.Now().UTC().Add(time.Hour),
+				Status:       "active",
+			},
+		},
 	}
-	docs := make([]interface{}, len(results))
-	for i, r := range results {
-		docs[i] = r
-	}
-	return mongo.NewCursorFromDocuments(docs, nil, nil)
 }
 
-func (m *testMockCollection) FindOne(ctx context.Context, filter interface{}, opts ...*options.FindOneOptions) *mongo.SingleResult {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if f, ok := filter.(bson.M); ok {
-		if phone, exists := f["phone_number"]; exists {
-			for _, rec := range m.records {
-				if rec.PhoneNumber == phone {
-					return mongo.NewSingleResultFromDocument(rec, nil, nil)
-				}
-			}
+func (m *ServiceMock) StartSession(ctx context.Context, r *model.RecordDto) (model.StatusName, error) {
+	if r == nil {
+		return model.Failure, nil
+	}
+
+	if r.PhoneNumber == "00000000000" {
+		return model.Failure, errors.New("internal error")
+	}
+
+	// Проверяем, есть ли уже сессия для этого номера телефона
+	existing, ok := m.store[r.PhoneNumber]
+	if ok || existing != nil {
+		return model.Failure, nil
+	}
+
+	// Создаем новую запись
+	rec := &model.Record{
+		ID:           primitive.NewObjectID(),
+		ClientName:   r.ClientName,
+		PhoneNumber:  r.PhoneNumber,
+		LicensePlate: r.LicensePlate,
+		SpotNumber:   r.SpotNumber,
+		StartTime:    time.Now().UTC(),
+		EndTime:      time.Now().UTC().Add(time.Hour),
+		Status:       "active",
+	}
+
+	// Вычисляем EndTime на основе Duration (если указана)
+	if r.Duration != nil && *r.Duration != "" {
+		// Парсим duration (например "1h")
+		duration, err := time.ParseDuration(*r.Duration)
+		if err == nil {
+			endTime := rec.StartTime.Add(duration)
+			rec.EndTime = endTime
 		}
 	}
-	return mongo.NewSingleResultFromDocument(nil, mongo.ErrNoDocuments, nil)
-}
 
-func (m *testMockCollection) UpdateOne(ctx context.Context, filter interface{}, update interface{}, opts ...*options.UpdateOptions) (*mongo.UpdateResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if f, ok := filter.(bson.M); ok {
-		if id, exists := f["_id"]; exists {
-			if objID, ok := id.(primitive.ObjectID); ok {
-				if rec, ok := m.records[objID]; ok {
-					if u, ok := update.(bson.M); ok {
-						if setMap, ok := u["$set"].(bson.M); ok {
-							if endTime, ok := setMap["end_time"].(*time.Time); ok {
-								rec.EndTime = endTime
-							}
-						}
-					}
-					return &mongo.UpdateResult{MatchedCount: 1, ModifiedCount: 1}, nil
-				}
-			}
+	// Проверяем, свободно ли место
+	for _, check := range m.store {
+		if check.SpotNumber == r.SpotNumber && check.Status == "active" {
+			// Место занято - возвращаем Occupied БЕЗ ошибки
+			return model.Occupied, nil
 		}
 	}
-	return &mongo.UpdateResult{MatchedCount: 0}, nil
+
+	// Создаем запись в репозитории
+	m.store[r.PhoneNumber] = rec
+
+	return model.Success, nil
 }
 
-func (m *testMockCollection) DeleteMany(ctx context.Context, filter interface{}, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if f, ok := filter.(bson.M); ok {
-		if phone, exists := f["phone_number"]; exists {
-			for id, rec := range m.records {
-				if rec.PhoneNumber == phone {
-					delete(m.records, id)
-					return &mongo.DeleteResult{DeletedCount: 1}, nil
-				}
-			}
-		}
+func (m *ServiceMock) GetSession(ctx context.Context, phone string) (*model.RecordDto, error) {
+	if phone == "00000000000" {
+		return nil, errors.New("internal error")
 	}
-	return &mongo.DeleteResult{DeletedCount: 0}, nil
+
+	rec, ok := m.store[phone]
+	if !ok || rec == nil {
+		return nil, nil
+	}
+
+	// Преобразуем Model.Record в RecordDto
+	dto := &model.RecordDto{
+		ClientName:   rec.ClientName,
+		PhoneNumber:  rec.PhoneNumber,
+		LicensePlate: rec.LicensePlate,
+		SpotNumber:   rec.SpotNumber,
+		StartTime:    &rec.StartTime,
+		EndTime:      &rec.EndTime,
+	}
+
+	return dto, nil
+}
+
+func (m *ServiceMock) ProlongSession(ctx context.Context, phone string, duration string) (*model.RecordDto, error) {
+	if phone == "00000000000" {
+		return nil, errors.New("internal error")
+	}
+
+	rec, ok := m.store[phone]
+	if !ok || rec == nil {
+		return nil, nil
+	}
+
+	// Если EndTime не установлена, устанавливаем её как StartTime + Duration
+	timeToAdd, err := time.ParseDuration(duration)
+	if err != nil {
+		return nil, err
+	}
+	rec.EndTime = rec.EndTime.Add(timeToAdd)
+
+	// Обновляем запись в репозитории
+	m.store[rec.PhoneNumber].EndTime = rec.EndTime
+
+	// Преобразуем обновленный Model.Record в RecordDto
+	dto := &model.RecordDto{
+		ClientName:   rec.ClientName,
+		PhoneNumber:  rec.PhoneNumber,
+		LicensePlate: rec.LicensePlate,
+		SpotNumber:   rec.SpotNumber,
+		StartTime:    &rec.StartTime,
+		EndTime:      &rec.EndTime,
+	}
+
+	return dto, nil
+}
+func (m *ServiceMock) StopSession(ctx context.Context, phone string) error {
+	if phone == "00000000000" {
+		return errors.New("internal error")
+	}
+	delete(m.store, phone)
+	return nil
 }
 
 // === Handler Tests ===
 
-func TestEnterStartSession(t *testing.T) {
-	repo := repository.NewMongoRepository(newTestMockCollection())
-	srv := service.NewService(repo)
+func TestHandler_StartSession(t *testing.T) {
+	srv := NewServiceMock()
 	handler := NewHandler(srv, log.Default())
 
-	reqBody := &model.RecordDto{
-		ClientName:   "Иван",
-		PhoneNumber:  "+79991234567",
-		LicensePlate: "A123BC140",
-		SpotNumber:   42,
+	tests := []struct {
+		name       string
+		dto        interface{}
+		wantCode   int
+		wantStatus model.StatusName
+	}{
+		{
+			name: "creating session success",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "+78888888888",
+				LicensePlate: "A321BC321",
+				SpotNumber:   100,
+			},
+			wantCode:   http.StatusCreated,
+			wantStatus: model.Success,
+		},
+		{
+			name: "session exist",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "+78888888888",
+				LicensePlate: "A321BC321",
+				SpotNumber:   101,
+			},
+			wantCode:   http.StatusOK,
+			wantStatus: model.Failure,
+		},
+		{
+			name: "spot occupied",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "+78888888881",
+				LicensePlate: "A321BC321",
+				SpotNumber:   100,
+			},
+			wantCode:   http.StatusOK,
+			wantStatus: model.Occupied,
+		},
+		{
+			name:       "json invalid",
+			dto:        []byte("not json"),
+			wantCode:   http.StatusBadRequest,
+			wantStatus: model.Failure,
+		},
+		{
+			name: "internal error",
+			dto: &model.RecordDto{
+				ClientName:   "egor",
+				PhoneNumber:  "00000000000",
+				LicensePlate: "A321BC321",
+				SpotNumber:   100,
+			},
+			wantCode:   http.StatusInternalServerError,
+			wantStatus: model.Failure,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.dto)
+			req := httptest.NewRequest("POST", "/api/sessions", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler.StartSession(w, req)
 
-	body, _ := json.Marshal(reqBody)
+			if w.Code != tt.wantCode {
+				t.Fatalf("status want %d, got %d", tt.wantCode, w.Code)
+			}
 
-	req := httptest.NewRequest("POST", "/api/sessions", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
+			if w.Code != http.StatusBadRequest && w.Code != http.StatusInternalServerError {
+				var resp model.Response
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
 
-	handler.StartSession(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("expected status 201, got %d", w.Code)
-	}
-
-	var resp model.Response
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	// if resp.Token == "" {
-	// 	t.Fatalf("expected non-empty token in response")
-	// }
-
-	// if resp.PassCode == "" {
-	// 	t.Fatalf("expected non-empty pass_code in response")
-	// }
-
-	if resp.Status != model.Success {
-		t.Fatalf("expected status 'success' in response")
-	}
-}
-
-func TestHandlerGetSession(t *testing.T) {
-	ctx := context.Background()
-	repo := repository.NewMongoRepository(newTestMockCollection())
-	srv := service.NewService(repo)
-	handler := NewHandler(srv, log.Default())
-
-	const recordsNum = 3
-	// Создаем несколько записей
-	for i := 1; i <= recordsNum; i++ {
-		_, err := srv.StartSession(ctx, &model.RecordDto{
-			ClientName:   fmt.Sprintf("Client%d", i),
-			PhoneNumber:  fmt.Sprintf("7999000%04d", i),
-			LicensePlate: fmt.Sprintf("A%03dBC", i),
-			SpotNumber:   i,
+				if resp.Status != tt.wantStatus {
+					t.Fatalf("response status want %s, got %s", tt.wantStatus, resp.Status)
+				}
+			}
 		})
-		if err != nil {
-			t.Fatalf("StartSession failed: %v", err)
-		}
-	}
-
-	// Проверяем каждую запись
-	for i := 1; i <= recordsNum; i++ {
-		phone := fmt.Sprintf("7999000%04d", i)
-		req := httptest.NewRequest("GET", fmt.Sprintf("/api/sessions/%s", phone), nil)
-		w := httptest.NewRecorder()
-		handler.GetSession(w, req)
-
-		if w.Code != http.StatusOK {
-			t.Fatalf("expected status 200, got %d", w.Code)
-		}
-
-		var record model.RecordDto
-		if err := json.NewDecoder(w.Body).Decode(&record); err != nil {
-			t.Fatalf("failed to decode response: %v", err)
-		}
-
-		if record.ClientName != fmt.Sprintf("Client%d", i) {
-			t.Fatalf("expected name \"Client%d\", got \"%v\"", i, record.ClientName)
-		}
-
-		if record.PhoneNumber != phone {
-			t.Fatalf("expected phone number \"%s\", got \"%v\"", phone, record.PhoneNumber)
-		}
-
-		if record.LicensePlate != fmt.Sprintf("A%03dBC", i) {
-			t.Fatalf("expected license plate \"A%03dBC\", got \"%v\"", i, record.LicensePlate)
-		}
-
-		if record.SpotNumber != i {
-			t.Fatalf("expected spot number \"%d\", got \"%d\"", i, record.SpotNumber)
-		}
 	}
 }
 
-func TestHandlerProlongSession(t *testing.T) {
-	ctx := context.Background()
-	repo := repository.NewMongoRepository(newTestMockCollection())
-	srv := service.NewService(repo)
+func TestHandler_GetSession(t *testing.T) {
+	srv := NewServiceMock()
 	handler := NewHandler(srv, log.Default())
 
-	// Создаем запись с Duration чтобы EndTime был установлен
-	phone := "79990001122"
-	duration := "1h"
-	srv.StartSession(ctx, &model.RecordDto{
-		ClientName:   "Анна",
-		PhoneNumber:  phone,
-		LicensePlate: "B777BB",
-		SpotNumber:   7,
-		Duration:     &duration,
-	})
+	tests := []struct {
+		name     string
+		phone    string
+		wantCode int
+		wantDto  *model.RecordDto
+	}{
+		{
+			name:  "get session successful",
+			phone: "+79999999999",
 
-	record, _ := srv.GetSession(ctx, phone)
-
-	if record == nil || record.EndTime == nil {
-		t.Fatalf("expected record with EndTime")
+			wantCode: http.StatusOK,
+			wantDto: &model.RecordDto{
+				ClientName:   "Egor",
+				PhoneNumber:  "+79999999999",
+				LicensePlate: "A123BC123",
+				SpotNumber:   1,
+			},
+		},
+		{
+			name:     "session don't exist",
+			phone:    "+78888888888",
+			wantCode: http.StatusNotFound,
+			wantDto:  nil,
+		},
+		{
+			name:     "internal error",
+			phone:    "00000000000",
+			wantCode: http.StatusInternalServerError,
+			wantDto:  nil,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", fmt.Sprintf("/api/sessions/%s", tt.phone), nil)
+			// req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler.GetSession(w, req)
 
-	initialEndTime := *record.EndTime
+			if w.Code != tt.wantCode {
+				t.Fatalf("status want %d, got %d", tt.wantCode, w.Code)
+			}
 
-	body, _ := json.Marshal(&model.ProlongSessionDto{Duration: "1h"})
+			if w.Code != http.StatusNotFound && w.Code != http.StatusInternalServerError {
+				var resp model.RecordDto
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
 
-	req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/sessions/%s", phone), bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	handler.ProlongSession(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", w.Code)
-	}
-
-	var res model.RecordDto
-	if err := json.NewDecoder(w.Body).Decode(&res); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if res.EndTime == nil {
-		t.Fatalf("expected EndTime in response")
-	}
-
-	expectedEndTime := initialEndTime.Add(time.Hour)
-	if !res.EndTime.Equal(expectedEndTime) {
-		t.Fatalf("expected end_time: %v, got: %v", expectedEndTime, *res.EndTime)
-	}
-
-}
-
-func TestHandlerStopSession(t *testing.T) {
-	ctx := context.Background()
-	repo := repository.NewMongoRepository(newTestMockCollection())
-	srv := service.NewService(repo)
-	handler := NewHandler(srv, log.Default())
-
-	// Создаем две записи для одного номера телефона
-	for i := 1; i <= 2; i++ {
-		srv.StartSession(ctx, &model.RecordDto{
-			ClientName:   fmt.Sprintf("Client%d", i),
-			PhoneNumber:  fmt.Sprintf("7999000%04d", i),
-			LicensePlate: fmt.Sprintf("C%03dA", i),
-			SpotNumber:   i + 10,
+				if !(resp.ClientName == tt.wantDto.ClientName &&
+					resp.SpotNumber == tt.wantDto.SpotNumber &&
+					resp.PhoneNumber == tt.wantDto.PhoneNumber &&
+					resp.LicensePlate == tt.wantDto.LicensePlate) {
+					t.Fatalf("dto want: %v, got: %v", *tt.wantDto, resp)
+				}
+			}
 		})
-
 	}
+}
 
-	// Удаляем по номеру телефона
-	phone := fmt.Sprintf("7999000%04d", 2)
-	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/sessions/%s", phone), nil)
-	// req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", resps[1].Token))
-	w := httptest.NewRecorder()
+func TestHandler_ProlongSession(t *testing.T) {
+	srv := NewServiceMock()
+	handler := NewHandler(srv, log.Default())
 
-	handler.StopSession(w, req)
-
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("expected status 204, got %d", w.Code)
+	tests := []struct {
+		name     string
+		phone    string
+		dto      *model.ProlongSessionDto
+		wantCode int
+		// wantDto  *model.RecordDto
+	}{
+		{
+			name:     "prolong session successful",
+			phone:    "+79999999999",
+			dto:      &model.ProlongSessionDto{Duration: "1h"},
+			wantCode: http.StatusOK,
+		},
+		{
+			name:     "session don't exist",
+			phone:    "+78888888888",
+			dto:      &model.ProlongSessionDto{Duration: "1h"},
+			wantCode: http.StatusNotFound,
+		},
+		{
+			name:     "internal error",
+			phone:    "00000000000",
+			dto:      &model.ProlongSessionDto{Duration: "1h"},
+			wantCode: http.StatusInternalServerError,
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(tt.dto)
+			// record, _ := srv.GetSession(context.Background(), tt.phone)
+			// var resEndTime time.Time
+			// if record != nil {
+			// 	dur, _ := time.ParseDuration(tt.dto.Duration)
+			// 	resEndTime = record.EndTime.Add(dur)
+			// 	// fmt.Printf("record end time: %v, after addition: %v", record.EndTime, resEndTime)
+			// }
+			req := httptest.NewRequest("PATCH", fmt.Sprintf("/api/sessions/%s", tt.phone), bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler.ProlongSession(w, req)
 
-	// Проверяем, что записи действительно удалены
-	rec, err := repo.GetByPhone(ctx, phone)
-	if err != nil {
-		t.Fatalf("failed to list by phone: %v", err)
+			if w.Code != tt.wantCode {
+				t.Fatalf("status want %d, got %d", tt.wantCode, w.Code)
+			}
+
+			if w.Code != http.StatusNotFound && w.Code != http.StatusInternalServerError {
+				var resp model.RecordDto
+				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+
+				// if !resp.EndTime.Equal(resEndTime) {
+				// 	t.Fatalf("endTime want: %v, got: %v", resEndTime, *resp.EndTime)
+				// }
+			}
+		})
 	}
+}
 
-	if rec != nil {
-		t.Fatalf("failed to delete: %v", rec)
+func TestHandler_StopSession(t *testing.T) {
+	srv := NewServiceMock()
+	handler := NewHandler(srv, log.Default())
+
+	tests := []struct {
+		name     string
+		phone    string
+		wantCode int
+		// wantDto  *model.RecordDto
+	}{
+		{
+			name:     "stop session successful",
+			phone:    "+79999999999",
+			wantCode: http.StatusOK,
+		},
+		{
+			name:     "session don't exist",
+			phone:    "+78888888888",
+			wantCode: http.StatusOK,
+		},
+		{
+			name:     "internal error",
+			phone:    "00000000000",
+			wantCode: http.StatusInternalServerError,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/sessions/%s", tt.phone), nil)
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			handler.StopSession(w, req)
+
+			if w.Code != tt.wantCode {
+				t.Fatalf("status want %d, got %d", tt.wantCode, w.Code)
+			}
+
+			if w.Code != http.StatusInternalServerError {
+				if rec, err := srv.GetSession(context.Background(), tt.phone); rec != nil || err != nil {
+					t.Fatalf("record not deleted for %v, err: %v", tt.phone, err)
+				}
+
+			}
+		})
 	}
 }

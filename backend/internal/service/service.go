@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"time"
 
 	"github.com/pochkachaiki/parkingspace/internal/model"
@@ -13,7 +11,7 @@ type Repository interface {
 	Create(ctx context.Context, rec *model.Record) (*model.Record, error)
 	GetAll(ctx context.Context) ([]*model.Record, error)
 	GetByPhone(ctx context.Context, phone string) (*model.Record, error)
-	Update(ctx context.Context, id string, endTime *time.Time) error
+	Update(ctx context.Context, id string, endTime time.Time) error
 	DeleteByPhone(ctx context.Context, phone string) error
 }
 
@@ -26,19 +24,29 @@ func NewService(repo Repository) *ParkingService {
 }
 
 // StartSession создает новую сессию парковки.
-func (p *ParkingService) StartSession(ctx context.Context, r *model.RecordDto) (*model.Response, error) {
+func (p *ParkingService) StartSession(ctx context.Context, r *model.RecordDto) (model.StatusName, error) {
 	if r == nil {
-		return &model.Response{Status: model.Failure}, errors.New("record dto is nil")
+		return model.Failure, nil
 	}
 
 	// Проверяем, есть ли уже сессия для этого номера телефона
 	existing, err := p.repo.GetByPhone(ctx, r.PhoneNumber)
 	if err != nil {
-		return &model.Response{Status: model.Failure}, err
+		return model.Failure, err
 	}
 	if existing != nil {
 		// Пользователь уже имеет активную сессию - возвращаем Failure БЕЗ ошибки
-		return &model.Response{Status: model.Failure}, nil
+		return model.Failure, nil
+	}
+
+	duration := "1h"
+	if r.Duration != nil {
+		duration = *r.Duration
+	}
+
+	timeToAdd, err := time.ParseDuration(duration)
+	if err != nil {
+		return model.Failure, err
 	}
 
 	// Создаем новую запись
@@ -48,39 +56,40 @@ func (p *ParkingService) StartSession(ctx context.Context, r *model.RecordDto) (
 		LicensePlate: r.LicensePlate,
 		SpotNumber:   r.SpotNumber,
 		StartTime:    time.Now().UTC(),
+		EndTime:      time.Now().UTC().Add(timeToAdd),
 		Status:       "active",
 	}
 
-	// Вычисляем EndTime на основе Duration (если указана)
-	if r.Duration != nil && *r.Duration != "" {
-		// Парсим duration (например "1h")
-		duration, err := time.ParseDuration(*r.Duration)
-		if err == nil {
-			endTime := rec.StartTime.Add(duration)
-			rec.EndTime = &endTime
-		}
-	}
+	// // Вычисляем EndTime на основе Duration (если указана)
+	// if r.Duration != nil && *r.Duration != "" {
+	// 	// Парсим duration (например "1h")
+	// 	duration, err := time.ParseDuration(*r.Duration)
+	// 	if err == nil {
+	// 		endTime := rec.StartTime.Add(duration)
+	// 		rec.EndTime = endTime
+	// 	}
+	// }
 
 	// Проверяем, свободно ли место
 	all, err := p.repo.GetAll(ctx)
 	if err != nil {
-		return &model.Response{Status: model.Failure}, err
+		return model.Failure, err
 	}
 
 	for _, check := range all {
 		if check.SpotNumber == r.SpotNumber && check.Status == "active" {
 			// Место занято - возвращаем Occupied БЕЗ ошибки
-			return &model.Response{Status: model.Occupied}, nil
+			return model.Occupied, nil
 		}
 	}
 
 	// Создаем запись в репозитории
 	_, err = p.repo.Create(ctx, rec)
 	if err != nil {
-		return &model.Response{Status: model.Failure}, err
+		return model.Failure, err
 	}
 
-	return &model.Response{Status: model.Success}, nil
+	return model.Success, nil
 }
 
 // GetSession возвращает информацию о сессии парковки по номеру телефона.
@@ -101,7 +110,7 @@ func (p *ParkingService) GetSession(ctx context.Context, phone string) (*model.R
 		LicensePlate: rec.LicensePlate,
 		SpotNumber:   rec.SpotNumber,
 		StartTime:    &rec.StartTime,
-		EndTime:      rec.EndTime,
+		EndTime:      &rec.EndTime,
 	}
 
 	return dto, nil
@@ -109,24 +118,22 @@ func (p *ParkingService) GetSession(ctx context.Context, phone string) (*model.R
 
 // ProlongSession продлевает сессию парковки.
 // Red: Согласно тестам, метод должен увеличить EndTime на указанную Duration
-func (p *ParkingService) ProlongSession(ctx context.Context, phone string, duration time.Duration) (*model.RecordDto, error) {
+func (p *ParkingService) ProlongSession(ctx context.Context, phone string, duration string) (*model.RecordDto, error) {
 	rec, err := p.repo.GetByPhone(ctx, phone)
 	if err != nil {
 		return nil, err
 	}
 	if rec == nil {
-		return nil, fmt.Errorf("session not found for phone %s", phone)
+		return nil, nil
 	}
 
-	// Если EndTime не установлена, устанавливаем её как StartTime + Duration
-	if rec.EndTime == nil {
-		endTime := rec.StartTime.Add(duration)
-		rec.EndTime = &endTime
-	} else {
-		// Иначе добавляем Duration к существующей EndTime
-		newEndTime := rec.EndTime.Add(duration)
-		rec.EndTime = &newEndTime
+	// Иначе добавляем Duration к существующей EndTime
+	timeToAdd, err := time.ParseDuration(duration)
+	if err != nil {
+		return nil, err
 	}
+
+	rec.EndTime = rec.EndTime.Add(timeToAdd)
 
 	// Обновляем запись в репозитории
 	err = p.repo.Update(ctx, rec.ID.Hex(), rec.EndTime)
@@ -141,7 +148,7 @@ func (p *ParkingService) ProlongSession(ctx context.Context, phone string, durat
 		LicensePlate: rec.LicensePlate,
 		SpotNumber:   rec.SpotNumber,
 		StartTime:    &rec.StartTime,
-		EndTime:      rec.EndTime,
+		EndTime:      &rec.EndTime,
 	}
 
 	return dto, nil

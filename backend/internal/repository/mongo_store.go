@@ -67,7 +67,7 @@ func (r *mongoRepository) GetAll(ctx context.Context) ([]*model.Record, error) {
 // GetByPhone возвращает первую сессию по номеру телефона.
 // Если сессия не найдена, возвращает nil без ошибки.
 func (r *mongoRepository) GetByPhone(ctx context.Context, phone string) (*model.Record, error) {
-	var rec *model.Record
+	var rec model.Record
 	err := r.coll.FindOne(ctx, bson.M{"phone_number": phone}).Decode(&rec)
 	if err == mongo.ErrNoDocuments {
 		return nil, nil
@@ -77,17 +77,17 @@ func (r *mongoRepository) GetByPhone(ctx context.Context, phone string) (*model.
 		// (например, ошибка "document is nil")
 		return nil, err
 	}
-	return rec, nil
+	return &rec, nil
 }
 
 // Update обновляет время окончания сессии парковки по ID.
-func (r *mongoRepository) Update(ctx context.Context, id string, endTime *time.Time) error {
+func (r *mongoRepository) Update(ctx context.Context, id string, endTime time.Time) error {
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
 		return err
 	}
 	update := bson.M{
-		"$set": bson.M{"end_time": endTime, "status": "completed"},
+		"$set": bson.M{"end_time": endTime},
 	}
 	res, err := r.coll.UpdateOne(ctx, bson.M{"_id": objID}, update)
 	if err != nil {

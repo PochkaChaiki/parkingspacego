@@ -5,7 +5,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/pochkachaiki/parkingspace/internal/model"
 )
@@ -21,48 +20,51 @@ func NewHandler(srv Service, logger *log.Logger) *Handler {
 
 // StartSession обрабатывает POST /api/sessions.
 func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
-	h.log.Printf("StartSession: POST /api/sessions от %s", r.RemoteAddr)
+	// h.log.Printf("StartSession: POST /api/sessions от %s", r.RemoteAddr)
 
 	var req *model.RecordDto
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.log.Fatalf("StartSession: Unmarshalling JSON error: %v", err)
+		h.log.Printf("StartSession: Unmarshalling JSON error: %v", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	created, err := h.srv.StartSession(r.Context(), req)
+	status, err := h.srv.StartSession(r.Context(), req)
 	if err != nil {
-		h.log.Fatalf("StartSession: service error for  %s: %v", req.PhoneNumber, err)
+		h.log.Printf("StartSession: service error for  %s: %v", req.PhoneNumber, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// if created.Status != "success" {
-	// log.Printf("StartSession: Статус %s для %s (место: %d)", created.Status, req.PhoneNumber, req.SpotNumber)
-	// } else {
-	// log.Printf("StartSession: Успешно создана сессия для %s (место: %d)", req.PhoneNumber, req.SpotNumber)
-	// }
+	switch status {
+	case model.Success:
+		w.WriteHeader(http.StatusCreated)
+	case model.Failure:
+		w.WriteHeader(http.StatusOK)
+	case model.Occupied:
+		w.WriteHeader(http.StatusOK)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(created)
+	json.NewEncoder(w).Encode(&model.Response{
+		Status: status,
+	})
 }
 
 // GetSession обрабатывает GET /api/sessions/{phone_number}.
 func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
-	// Извлекаем phone из пути /api/sessions/{phone}
 	phone := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
-	h.log.Printf("Get session started")
 
 	record, err := h.srv.GetSession(r.Context(), phone)
 	if err != nil {
-		h.log.Fatalf("GetSession: error for %s: %v", phone, err)
-		http.Error(w, "session not found", http.StatusNotFound)
+		h.log.Printf("GetSession: error for %s: %v", phone, err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	if record == nil {
-		w.WriteHeader(http.StatusNoContent)
+		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
 
@@ -71,35 +73,35 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(record)
 }
 
-// ProlongSession обрабатывает PATCH /api/records/{phone_number}.
+// ProlongSession обрабатывает PATCH /api/sessions/{phone_number}.
 func (h *Handler) ProlongSession(w http.ResponseWriter, r *http.Request) {
-	// Извлекаем phone из пути /api/records/{phone}
-	phone := strings.TrimPrefix(r.URL.Path, "/api/records/")
+	// Извлекаем phone из пути /api/sessions/{phone}
+	phone := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
 
 	var req model.ProlongSessionDto
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.log.Fatalf("ProlongSession: Unmarshalling JSON error for %s: %v", phone, err)
+		h.log.Printf("ProlongSession: Unmarshalling JSON error for %s: %v", phone, err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	// Парсим duration (например "1h")
-	duration, err := time.ParseDuration(req.Duration)
-	if err != nil {
-		h.log.Fatalf("ProlongSession: invalid duration format '%s' for %s: %v", req.Duration, phone, err)
-		http.Error(w, "invalid duration format", http.StatusBadRequest)
-		return
-	}
+	// duration, err := time.ParseDuration(req.Duration)
+	// if err != nil {
+	// h.log.Printf("ProlongSession: invalid duration format '%s' for %s: %v", req.Duration, phone, err)
+	// http.Error(w, "invalid duration format", http.StatusBadRequest)
+	// return
+	// }
 
-	updated, err := h.srv.ProlongSession(r.Context(), phone, duration)
+	updated, err := h.srv.ProlongSession(r.Context(), phone, req.Duration)
 	if err != nil {
-		h.log.Fatalf("ProlongSession: service error for %s: %v", phone, err)
+		h.log.Printf("ProlongSession: service error for %s: %v", phone, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	if updated == nil {
-		w.WriteHeader(http.StatusNoContent)
+		http.Error(w, "session not found", http.StatusNotFound)
 		return
 	}
 
@@ -110,17 +112,17 @@ func (h *Handler) ProlongSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(updated)
 }
 
-// StopSession обрабатывает DELETE /api/records/{phone_number}.
+// StopSession обрабатывает DELETE /api/sessions/{phone_number}.
 func (h *Handler) StopSession(w http.ResponseWriter, r *http.Request) {
-	phone := strings.TrimPrefix(r.URL.Path, "/api/records/")
+	phone := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
 
 	if err := h.srv.StopSession(r.Context(), phone); err != nil {
-		h.log.Fatalf("StopSession: service error for %s: %v", phone, err)
+		h.log.Printf("StopSession: service error for %s: %v", phone, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	w.WriteHeader(http.StatusOK)
 }
 
 // Health обрабатывает GET /health для healthchecks
