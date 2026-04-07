@@ -40,23 +40,13 @@ jobs:
       #     name: parking-server
       #     path: parking-server
 
-      - name: test code
+      - name: Test code
         working-directory: backend 
         run: go test -v -race -coverprofile=coverage.out ./...
       
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.out
-          flags: backend
+      
 
       
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./coverage.out
-          flags: backend
-
   frontend:
     name: Frontend ci
     runs-on: ubuntu-latest
@@ -89,7 +79,3 @@ jobs:
         working-directory: frontend
         run: npm test -- --coverage --passWithNoTests --watchAll=false --ci
       
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        with:
-          flags: frontend
