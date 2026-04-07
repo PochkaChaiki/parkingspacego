@@ -31,3 +31,11 @@ frontend/node_modules/
 *.log
 .env.*
 .env.local
+
+*.md
+
+.next/
+.swc/
+out/
+public/
+.env

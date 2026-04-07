@@ -27,9 +27,11 @@ jobs:
       #       ${{ runner.os }}-go-
       
       - name: Download dependencies
+        working-directory: backend 
         run: go mod download && go mod verify
       
       - name: Build server binary
+        working-directory: backend 
         run: go build -o parking-server ./cmd/app
       
       # - name: Upload build artifact

@@ -17,7 +17,7 @@ describe('Parking Management System - Main Page', () => {
 
   it('should render main header with title', () => {
     render(<Home />);
-    expect(screen.getByText(/Parking Management System/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Parking Management System/i, level: 1 })).toBeInTheDocument();
     expect(screen.getByText(/Manage your parking sessions/i)).toBeInTheDocument();
   });
 
@@ -131,13 +131,13 @@ describe('Parking Management System - Main Page', () => {
     fireEvent.click(formButtons[formButtons.length - 1]); // Click the form button
 
     await waitFor(() => {
-      expect(screen.getByText(/Operation completed successfully/i)).toBeInTheDocument();
+      expect(screen.getByText(/Session prolonged successfully/i)).toBeInTheDocument();
     });
   });
 
-  it('should render footer with API URL', () => {
+  it('should render footer with copyright', () => {
     render(<Home />);
-    expect(screen.getByText(/Backend API/i)).toBeInTheDocument();
+    expect(screen.getByText(/© 2026 Parking Management System/i)).toBeInTheDocument();
   });
 
   it('should maintain tab state when switching between tabs', async () => {
