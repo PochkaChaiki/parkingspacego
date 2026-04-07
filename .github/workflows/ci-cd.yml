@@ -40,15 +40,8 @@ jobs:
       #     name: parking-server
       #     path: parking-server
 
-      # - name: Cache Go modules
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: ~/go/pkg/mod
-      #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-go-
-      
       - name: test code
+        working-directory: backend 
         run: go test -v -race -coverprofile=coverage.out ./...
       
       - name: Upload coverage reports
@@ -57,30 +50,6 @@ jobs:
           file: ./coverage.out
           flags: backend
 
-  # backend-test:
-    # name: Test Backend
-    # runs-on: ubuntu-latest
-    # steps:
-      # - uses: actions/checkout@v4
-      
-      # - name: Set up Go
-      #   uses: actions/setup-go@v4
-      #   with:
-      #     go-version: '1.25'
-      
-      # - name: Cache Go modules
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: ~/go/pkg/mod
-      #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-go-
-      
-      # - name: Download dependencies
-      #   run: go mod download
-      
-      # - name: Run tests with coverage
-      #   run: go test -v -race -coverprofile=coverage.out ./...
       
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
@@ -115,26 +84,10 @@ jobs:
       #     name: frontend-dist
       #     path: frontend/dist
 
-  # frontend-test:
-    # name: Test Frontend
-    # runs-on: ubuntu-latest
-    # steps:
-    #   - uses: actions/checkout@v4
-      
-      # - name: Set up Node.js
-      #   uses: actions/setup-node@v4
-      #   with:
-      #     node-version: '20'
-      #     cache: 'npm'
-      #     cache-dependency-path: frontend/package-lock.json
-      
-      # - name: Install dependencies
-      #   working-directory: frontend
-      #   run: npm install
       
       - name: Run tests
         working-directory: frontend
-        run: npm test -- --coverage --passWithNoTests
+        run: npm test -- --coverage --passWithNoTests --watchAll=false --ci
       
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
