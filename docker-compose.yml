@@ -19,9 +19,7 @@ services:
       - parking-net
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile.backend
+    image: cr.yandex/crpm5i3fj81cq0ka0o72/backend:latest
     container_name: parking-backend
     depends_on:
       mongo:
@@ -37,11 +35,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile.frontend
-      args:
-        - NEXT_PUBLIC_API_BASE_URL=${API_URL-http://backend:5005}
+    image: cr.yandex/crpm5i3fj81cq0ka0o72/frontend:latest
     container_name: parking-frontend
     depends_on:
       - backend
