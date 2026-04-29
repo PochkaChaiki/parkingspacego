@@ -4,7 +4,6 @@
  * Following Red/Green TDD methodology
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 /**
  * Formats Date object to ISO 8601 string
@@ -124,7 +123,7 @@ export function validateSpotNumber(spot) {
  * @throws {Error} - If request fails
  */
 export async function createSession(sessionData) {
-  const url = `${API_BASE_URL}/api/sessions`;
+  const url = `/api/sessions`;
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -150,7 +149,7 @@ export async function createSession(sessionData) {
  */
 export async function getSession(phoneNumber) {
   const encodedPhone = encodeURIComponent(phoneNumber);
-  const url = `${API_BASE_URL}/api/sessions/${encodedPhone}`;
+  const url = `/api/sessions/${encodedPhone}`;
   const response = await fetch(url, {
     method: 'GET',
     headers: {
@@ -174,7 +173,7 @@ export async function getSession(phoneNumber) {
  */
 export async function prolongSession(phoneNumber, duration) {
   const encodedPhone = encodeURIComponent(phoneNumber);
-  const url = `${API_BASE_URL}/api/sessions/${encodedPhone}`;
+  const url = `/api/sessions/${encodedPhone}`;
   const response = await fetch(url, {
     method: 'PATCH',
     headers: {
@@ -198,7 +197,7 @@ export async function prolongSession(phoneNumber, duration) {
  */
 export async function stopSession(phoneNumber) {
   const encodedPhone = encodeURIComponent(phoneNumber);
-  const url = `${API_BASE_URL}/api/sessions/${encodedPhone}`;
+  const url = `/api/sessions/${encodedPhone}`;
   const response = await fetch(url, {
     method: 'DELETE',
     headers: {

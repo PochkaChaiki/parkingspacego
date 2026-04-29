@@ -40,5 +40,10 @@ out/
 public/
 .env
 
-terraform/
-ansible/
+# terraform/
+*.tfstate*
+init.sh
+.terraform/
+.terraform*
+# ansible/
+inventory.ini
