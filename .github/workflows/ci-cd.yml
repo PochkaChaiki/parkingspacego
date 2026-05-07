@@ -150,7 +150,7 @@ jobs:
         uses: yc-actions/yc-cr-login@v2
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
-          cr-id: ${{ secrets.YC_CR_ID }}
+          # cr-id: ${{ secrets.YC_CR_ID }}
       
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
@@ -159,7 +159,7 @@ jobs:
           file: frontend/Dockerfile.frontend
           push: true
           tags: |
-            cr.yandex/crpm5i3fj81cq0ka0o72/frontend:${{ github.sha }}
-            cr.yandex/crpm5i3fj81cq0ka0o72/frontend:latest
+            cr.yandex/${{ secrets.YC_REGISTRY }}/frontend:${{ github.sha }}
+            cr.yandex/${{ secrets.YC_REGISTRY }}/frontend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max 
