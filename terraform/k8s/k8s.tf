@@ -1,19 +1,28 @@
-resource "yandex_kubernetes_cluster" "lab2_k8s" {
-  name        = "lab2-k8s-cluster"
+resource "yandex_vpc_network" "lab3_network" {
+  name = "lab3_network"
+}
+
+resource "yandex_vpc_subnet" "lab3_subnet" {
+  name           = "lab3-subnet"
+  zone           = "ru-central1-b"
+  network_id     = yandex_vpc_network.lab3_network.id
+  v4_cidr_blocks = ["10.0.1.0/24"]
+}
+
+resource "yandex_kubernetes_cluster" "lab3_k8s" {
+  name        = "lab3-k8s-cluster"
   description = "Kubernetes cluster for parking app"
   
-  network_id = yandex_vpc_network.lab2_network.id
+  network_id = yandex_vpc_network.lab3_network.id
   
+  release_channel = "REGULAR"
+
   master {
-    regional {
-      region = "ru-central1"
-      location {
-        zone      = "ru-central1-b"
-        subnet_id = yandex_vpc_subnet.lab2_subnet.id
-      }
+    zonal {
+      zone      = "ru-central1-b"
+      subnet_id = yandex_vpc_subnet.lab3_subnet.id
     }
     
-    version = "1.28"
     public_ip = true
     
     maintenance_policy {
@@ -25,10 +34,9 @@ resource "yandex_kubernetes_cluster" "lab2_k8s" {
   node_service_account_id = yandex_iam_service_account.k8s_node_sa.id
 }
 
-resource "yandex_kubernetes_node_group" "lab2_nodes" {
-  name        = "lab2-node-group"
-  cluster_id  = yandex_kubernetes_cluster.lab2_k8s.id
-  version     = "1.28"
+resource "yandex_kubernetes_node_group" "lab3_nodes" {
+  name        = "lab3-node-group"
+  cluster_id  = yandex_kubernetes_cluster.lab3_k8s.id
   
   instance_template {
     platform_id = "standard-v3"
@@ -44,7 +52,7 @@ resource "yandex_kubernetes_node_group" "lab2_nodes" {
     }
     
     network_interface {
-      subnet_ids = [yandex_vpc_subnet.lab2_subnet.id]
+      subnet_ids = [yandex_vpc_subnet.lab3_subnet.id]
       nat        = true
     }
     

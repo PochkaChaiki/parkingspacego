@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/pochkachaiki/parkingspace/internal/handler"
+	"github.com/pochkachaiki/parkingspace/internal/metrics"
 	"github.com/pochkachaiki/parkingspace/internal/repository"
 	"github.com/pochkachaiki/parkingspace/internal/service"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -59,24 +61,30 @@ func main() {
 	h := handler.NewHandler(svc, log.New(os.Stdout, "Backend: ", log.LstdFlags))
 	log.Println("Handler initialized")
 
+	metrics.RegisterAll()
+
 	// === Setup HTTP Routes ===
 	mux := http.NewServeMux()
 
 	// Health check
 	mux.HandleFunc("GET /health", h.Health)
 
+	// Ready check
+	mux.HandleFunc("GET /ready", h.Ready)
+
 	// POST /api/sessions - create session
-	mux.HandleFunc("POST /api/sessions", h.StartSession)
+	mux.HandleFunc("POST /api/sessions", metrics.PrometheusMiddleware("StartSession", h.StartSession))
 
 	// GET /api/sessions/{phone} - get session info
-	mux.HandleFunc("GET /api/sessions/{phone}", h.GetSession)
+	mux.HandleFunc("GET /api/sessions/{phone}", metrics.PrometheusMiddleware("GetSession", h.GetSession))
 
 	// PATCH /api/records/{phone} - prolong session
-	mux.HandleFunc("PATCH /api/sessions/{phone}", h.ProlongSession)
+	mux.HandleFunc("PATCH /api/sessions/{phone}", metrics.PrometheusMiddleware("ProlongSession", h.ProlongSession))
 
 	// DELETE /api/records/{phone} - stop session
-	mux.HandleFunc("DELETE /api/sessions/{phone}", h.StopSession)
+	mux.HandleFunc("DELETE /api/sessions/{phone}", metrics.PrometheusMiddleware("StopSession", h.StopSession))
 
+	mux.Handle("GET /metrics", promhttp.Handler())
 	// === CORS Middleware ===
 	corsHandler := corsMiddleware(mux)
 

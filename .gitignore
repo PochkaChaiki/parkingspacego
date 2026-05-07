@@ -47,3 +47,5 @@ init.sh
 .terraform*
 # ansible/
 inventory.ini
+# helm
+values.yaml

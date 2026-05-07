@@ -1,0 +1,23 @@
+{{- if .Values.mongodb.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-mongodb-config
+  labels:
+    app: mongodb
+    release: {{ .Release.Name }}
+data:
+  mongod.conf: |
+    storage:
+      dbPath: /data/db
+      journal:
+        enabled: true
+    systemLog:
+      destination: stdout
+      logAppend: true
+    net:
+      port: 27017
+      bindIp: 0.0.0.0
+    security:
+      authorization: enabled
+{{- end }}

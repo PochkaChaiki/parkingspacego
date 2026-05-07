@@ -1,0 +1,11 @@
+apiVersion: v2
+name: parking-app
+description: Parking application with Go backend, Next.js frontend, and MongoDB
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+# dependencies:
+  # - name: mongodb
+    # version: "13.x"
+    # repository: https://charts.bitnami.com/bitnami
+    # condition: mongodb.enabled

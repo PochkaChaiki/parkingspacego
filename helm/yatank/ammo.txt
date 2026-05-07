@@ -1,0 +1,33 @@
+203 get_session_ok
+GET /api/sessions/+79001234567 HTTP/1.1
+Host: parking-app-frontend.parking.svc.cluster.local:8080
+Content-Type: application/json
+Accept: application/json
+Connection: keep-alive
+Content-Length: 0
+
+203 get_session_404
+GET /api/sessions/+79999999999 HTTP/1.1
+Host: parking-app-frontend.parking.svc.cluster.local:8080
+Content-Type: application/json
+Accept: application/json
+Connection: keep-alive
+Content-Length: 0
+
+311 create_session
+POST /api/sessions HTTP/1.1
+Host: parking-app-frontend.parking.svc.cluster.local:8080
+Content-Type: application/json
+Accept: application/json
+Connection: keep-alive
+Content-Length: 118
+
+{"client_name":"Test User","phone_number":"+79001234567","license_plate":"A123BC777","spot_number":42,"duration":"1h"}314 create_session_spot2
+POST /api/sessions HTTP/1.1
+Host: parking-app-frontend.parking.svc.cluster.local:8080
+Content-Type: application/json
+Accept: application/json
+Connection: keep-alive
+Content-Length: 121
+
+{"client_name":"Load Tester","phone_number":"+79007654321","license_plate":"X999YY199","spot_number":15,"duration":"30m"}

@@ -1,0 +1,29 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: yandex-tank-test
+  namespace: load-testing
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: yandex-tank
+          image: yandex/yandex-tank:latest
+          command: ["yandex-tank", "-c", "/etc/yandex-tank-config/load.yaml"]
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          volumeMounts:
+            - name: tank-config
+              mountPath: /etc/yandex-tank-config
+              readOnly: true
+      volumes:
+        - name: tank-config
+          configMap:
+            name: yandex-tank-config
+  backoffLimit: 0

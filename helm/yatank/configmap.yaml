@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: yandex-tank-config
+  namespace: load-testing
+data:
+  load.yaml: |
+    phantom:
+      address: parking-app-backend.parking.svc.cluster.local:5005
+      instances: 50
+      header_http: "1.1"
+      headers:
+        - "[Connection: keep-alive]"
+        - "[Content-Type: application/json]"
+        - "[Accept: application/json]"
+        - "[User-Agent: Yandex.Tank/K8S-Test]"
+      load_profile:
+        load_type: rps
+        schedule: line(1, 30, 5m) const(30, 10m) line(30, 5, 2m)
+      ammofile: /etc/yandex-tank-config/ammo.txt
+      ammo_type: phantom
+
+    console:
+      enabled: true
+
+    telegraf:
+      enabled: false
+
+    autostop:
+      autostop:
+        - time(3000, 10)
+        - http(5xx, 100%, 5)
+        - net(xx, 10, 30)
+
+  run-test.sh: |
+    #!/bin/bash
+    set -e
+    echo "🔧 Generating ammo.txt with exact UTF-8 byte sizes..."
+    
+    python3 << 'PYEOF'
+    def write_ammo(f, method, path, headers, body=None, tag=""):
+        req = f"{method} {path} HTTP/1.1\r\n"
+        for k, v in headers.items():
+            req += f"{k}: {v}\r\n"
+        req += "\r\n"  # Конец заголовков
+        if body is not None:
+            req += body
+        # Точный подсчёт байт в UTF-8 с \r\n
+        size = len(req.encode('utf-8'))
+        f.write(f"{size} {tag}\n{req}")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Connection": "keep-alive"
+    }
+
+    out_path = "/etc/yandex-tank-config/ammo.txt"
+    with open(out_path, "w", encoding="utf-8") as f:
+        write_ammo(f, "GET", "/api/sessions/+79001234567", headers, tag="get_session_ok")
+        write_ammo(f, "GET", "/api/sessions/+79999999999", headers, tag="get_session_404")
+        write_ammo(f, "POST", "/api/sessions", headers, 
+                  body='{"client_name":"Test User","phone_number":"+79001234567","license_plate":"А123БВ777","spot_number":42,"duration":"1h"}', 
+                  tag="create_session")
+        write_ammo(f, "POST", "/api/sessions", headers, 
+                  body='{"client_name":"Load Tester","phone_number":"+79007654321","license_plate":"Х999УУ199","spot_number":15,"duration":"30m"}', 
+                  tag="create_session_spot2")
+    print(f"✅ ammo.txt created at {out_path}")
+    PYEOF
+
+    echo "🚀 Starting Yandex.Tank..."
+    cd /etc/yandex-tank-config
+    yandex-tank -c load.yaml
+    echo "✅ Test finished."
+    sleep 30

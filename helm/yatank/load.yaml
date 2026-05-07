@@ -1,0 +1,26 @@
+phantom:
+  address: parking-app-frontend.parking.svc.cluster.local:8080
+  instances: 50
+  header_http: "1.1"
+  headers:
+    - "[Connection: keep-alive]"
+    - "[Content-Type: application/json]"
+    - "[Accept: application/json]"
+    - "[User-Agent: Yandex.Tank/K8S-Test]"
+  load_profile:
+    load_type: rps
+    schedule: line(1, 100, 7m) const(100, 10m) line(100, 5, 2m)
+  ammofile: /etc/yandex-tank-config/ammo.txt
+  ammo_type: phantom
+
+console:
+  enabled: true
+
+telegraf:
+  enabled: false
+
+autostop:
+  autostop:
+    - time(3000, 10)
+    - http(5xx, 100%, 5)
+    - net(xx, 10, 30)

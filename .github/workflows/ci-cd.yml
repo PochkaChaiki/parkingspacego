@@ -106,4 +106,60 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-  
+  backend-push:
+    name: Backend Push to YCR
+    needs: backend-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@v3
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
+          # cr-id: ${{ secrets.YC_CR_ID }}
+      
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        env:
+          CR_REGISTRY: ${{ secrets.YC_REGISTRY }}
+        with:
+          context: backend
+          file: backend/Dockerfile.backend
+          push: true
+          tags: |
+            cr.yandex/${{ secrets.YC_REGISTRY }}/backend:${{ github.sha }}
+            cr.yandex/${{ secrets.YC_REGISTRY }}/backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  frontend-push:
+    name: Frontend Push to YCR
+    needs: frontend-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Login to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@v2
+        with:
+          yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
+          cr-id: ${{ secrets.YC_CR_ID }}
+      
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          file: frontend/Dockerfile.frontend
+          push: true
+          tags: |
+            cr.yandex/crpm5i3fj81cq0ka0o72/frontend:${{ github.sha }}
+            cr.yandex/crpm5i3fj81cq0ka0o72/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max 
