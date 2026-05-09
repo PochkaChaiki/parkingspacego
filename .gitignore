@@ -49,3 +49,5 @@ init.sh
 inventory.ini
 # helm
 values.yaml
+coverage/
+

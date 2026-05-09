@@ -1,7 +1,9 @@
+// frontend/jest.config.js
 module.exports = {
   testEnvironment: 'jest-environment-jsdom',
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testMatch: ['**/__tests__/**/*.test.js', '**/__tests__/**/*.test.jsx'],
+  
   moduleNameMapper: {
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/lib/(.*)$': '<rootDir>/src/lib/$1',
@@ -9,17 +11,34 @@ module.exports = {
     '^@/styles/(.*)$': '<rootDir>/src/styles/$1',
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
   },
+  
   transform: {
     '^.+\\.(js|jsx)$': ['babel-jest', { presets: ['next/babel'] }],
   },
+  
   transformIgnorePatterns: [
     '/node_modules/',
     '^.+\\.module\\.(css|sass|scss)$',
   ],
+  
   collectCoverageFrom: [
     'src/**/*.{js,jsx}',
     '!src/**/*.d.ts',
     '!src/**/index.{js,jsx}',
     '!src/**/{__tests__,.*}/**',
   ],
+  
+  reporters: process.env.CI 
+    ? [
+        'default',
+        ['jest-sonar', {
+          outputDirectory: '.',
+          outputName: 'sonar-test-report.json',
+          reportedFilePath: 'relative',
+          relativeRootDir: './frontend'
+        }]
+      ]
+    : ['default'],
+  
+  watch: false,
 }

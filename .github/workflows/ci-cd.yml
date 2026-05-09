@@ -100,8 +100,6 @@ jobs:
           npm test -- \
             --coverage \
             --coverageReporters=lcov \
-            --reporters=default \
-            --reporters=jest-sonar \
             --watchAll=false \
             --passWithNoTests
       
