@@ -304,82 +304,88 @@ jobs:
   notify-telegram:
     name: Notify Telegram
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-test, backend-push, frontend-push, sonarqube-scan]
-    if: always()  # Выполнять всегда, чтобы отправить уведомление о любом исходе
+    needs: [backend-test, frontend-test, backend-build, frontend-build, backend-push, frontend-push, sonarqube-scan]
+    if: always()
     
     steps:
-      # === ШАГ 1: Определяем общий статус пайплайна через GitHub Actions expressions ===
-      - name: Set pipeline status
-        id: pipeline-status
+      # === ЕДИНСТВЕННЫЙ ШАГ: определяем статус через env-переменные ===
+      - name: Calculate pipeline status
+        id: status
+        env:
+          # Передаём результаты всех job'ов как env-переменные
+          # (они вычисляются GitHub Actions ДО запуска шага)
+          BACKEND_TEST: ${{ needs.backend-test.result }}
+          FRONTEND_TEST: ${{ needs.frontend-test.result }}
+          BACKEND_BUILD: ${{ needs.backend-build.result }}
+          FRONTEND_BUILD: ${{ needs.frontend-build.result }}
+          BACKEND_PUSH: ${{ needs.backend-push.result }}
+          FRONTEND_PUSH: ${{ needs.frontend-push.result }}
+          SONAR_SCAN: ${{ needs.sonarqube-scan.result }}
         run: |
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "emoji=✅" >> $GITHUB_OUTPUT
-          echo "details=Все этапы пройдены успешно" >> $GITHUB_OUTPUT
-        # По умолчанию — успех, переопределим ниже через условия
+          # === Инициализируем как УСПЕХ ===
+          FINAL_STATUS="success"
+          EMOJI="✅"
+          DETAILS="✅ Все этапы пайплайна пройдены"
+          FAILED_JOB=""
+          
+          # === Проверяем в порядке приоритета: тесты → анализ → сборка → деплой ===
+          
+          # 1. Тесты (критично)
+          if [[ "$BACKEND_TEST" == "failure" ]]; then
+            FINAL_STATUS="failure"; EMOJI="🐹"; DETAILS="❌ Backend tests failed"; FAILED_JOB="backend-test"
+          elif [[ "$FRONTEND_TEST" == "failure" ]]; then
+            FINAL_STATUS="failure"; EMOJI="⚛️"; DETAILS="❌ Frontend tests failed"; FAILED_JOB="frontend-test"
+          
+          # 2. SonarQube (если запускался и упал)
+          elif [[ "$SONAR_SCAN" == "failure" ]]; then
+            FINAL_STATUS="failure"; EMOJI="🛡️"; DETAILS="❌ SonarQube Quality Gate failed"; FAILED_JOB="sonarqube-scan"
+          
+          # 3. Сборка
+          elif [[ "$BACKEND_BUILD" == "failure" ]]; then
+            FINAL_STATUS="failure"; EMOJI="🔨"; DETAILS="❌ Backend build failed"; FAILED_JOB="backend-build"
+          elif [[ "$FRONTEND_BUILD" == "failure" ]]; then
+            FINAL_STATUS="failure"; EMOJI="🔨"; DETAILS="❌ Frontend build failed"; FAILED_JOB="frontend-build"
+          
+          # 4. Деплой в registry
+          elif [[ "$BACKEND_PUSH" == "failure" ]]; then
+            FINAL_STATUS="failure"; EMOJI="🚀"; DETAILS="❌ Backend push to YCR failed"; FAILED_JOB="backend-push"
+          elif [[ "$FRONTEND_PUSH" == "failure" ]]; then
+            FINAL_STATUS="failure"; EMOJI="🚀"; DETAILS="❌ Frontend push to YCR failed"; FAILED_JOB="frontend-push"
+          fi
+          
+          # === Выводим результаты в GITHUB_OUTPUT (только один раз!) ===
+          echo "status=$FINAL_STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "details=$DETAILS" >> $GITHUB_OUTPUT
+          echo "failed_job=$FAILED_JOB" >> $GITHUB_OUTPUT
+          
+          # === Лог для отладки в GitHub Actions ===
+          echo "🔍 Debug: BACKEND_TEST=$BACKEND_TEST, SONAR_SCAN=$SONAR_SCAN, FINAL_STATUS=$FINAL_STATUS"
 
-      # === ШАГ 2: Проверяем провал тестов ===
-      - name: Check backend tests failure
-        if: needs.backend-test.result == 'failure' || needs.backend-test.result == 'cancelled'
-        run: |
-          echo "status=failure" >> $GITHUB_OUTPUT
-          echo "emoji=🐹" >> $GITHUB_OUTPUT  
-          echo "details=❌ Backend tests failed" >> $GITHUB_OUTPUT
-        shell: bash
-
-      - name: Check frontend tests failure
-        if: needs.frontend-test.result == 'failure' || needs.frontend-test.result == 'cancelled'
-        run: |
-          echo "status=failure" >> $GITHUB_OUTPUT
-          echo "emoji=⚛️" >> $GITHUB_OUTPUT
-          echo "details=❌ Frontend tests failed" >> $GITHUB_OUTPUT
-        shell: bash
-
-      # === ШАГ 3: Проверяем провал SonarQube (только если он запускался) ===
-      - name: Check SonarQube failure
-        if: needs.sonarqube-scan.result == 'failure'
-        run: |
-          echo "status=failure" >> $GITHUB_OUTPUT
-          echo "emoji=🛡️" >> $GITHUB_OUTPUT
-          echo "details=❌ SonarQube Quality Gate failed" >> $GITHUB_OUTPUT
-        shell: bash
-
-      # === ШАГ 4: Проверяем провал сборки/деплоя ===
-      - name: Check build/push failure
-        if: needs.backend-push.result == 'failure' || needs.frontend-push.result == 'failure'
-        run: |
-          echo "status=failure" >> $GITHUB_OUTPUT
-          echo "emoji=🚀" >> $GITHUB_OUTPUT
-          echo "details=❌ Build or push to registry failed" >> $GITHUB_OUTPUT
-        shell: bash
-
-      # === ШАГ 5: Отправляем уведомление в Telegram ===
+      # === ОТПРАВКА УВЕДОМЛЕНИЯ ===
       - name: Send Telegram notification
         uses: appleboy/telegram-action@master
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: markdown
-          message: |
-            ${{ steps.pipeline-status.outputs.emoji }} *CI/CD Pipeline Status*
-            
-            *📦 Репозиторий:* ${{ github.repository }}
-            *🌿 Branch:* ${{ github.ref_name }}
-            *💻 Commit:* [${{ github.sha }}](${{ github.event.head_commit.url }})
-            *👤 Author:* ${{ github.actor }}
-            *🔗 Run:* [#${{ github.run_number }}](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            
-            *📊 Общий статус:* ${{ steps.pipeline-status.outputs.status == 'failure' && '🔴 FAILED' || '🟢 SUCCESS' }}
-            *ℹ️ Детали:* ${{ steps.pipeline-status.outputs.details }}
-            
-            *🔧 Результаты job'ов:*
-            • 🧪 Backend Tests: ${{ needs.backend-test.result }}
-            • 🧪 Frontend Tests: ${{ needs.frontend-test.result }}
-            • 🛡️ SonarQube Scan: ${{ needs.sonarqube-scan.result || 'skipped' }}
-            • 🔨 Backend Build: ${{ needs.backend-build.result }}
-            • 🔨 Frontend Build: ${{ needs.frontend-build.result }}
-            • 🚀 Backend Push: ${{ needs.backend-push.result }}
-            • 🚀 Frontend Push: ${{ needs.frontend-push.result }}
-            
-            ${{ steps.pipeline-status.outputs.status == 'failure' && '⚠️ *Проверьте логи в GitHub Actions!*' || '' }}
-          disable_notification: false
           disable_web_page_preview: true
+          message: |
+            ${{ steps.status.outputs.emoji }} *CI/CD Pipeline: ${{ steps.status.outputs.status == 'failure' && '🔴 FAILED' || '🟢 SUCCESS' }}*
+            
+            *📦* ${{ github.repository }} | *🌿* ${{ github.ref_name }}
+            *💻* [${{ github.sha }}](${{ github.event.head_commit.url }}) | *👤* ${{ github.actor }}
+            
+            *📋 Результат:* ${{ steps.status.outputs.details }}
+            ${{ steps.status.outputs.failed_job != '' && format('*⚠️ Упал джоб:* `{0}`', steps.status.outputs.failed_job) || '' }}
+            
+            *🔧 Статусы джобов:*
+            ```diff
+            ${{ needs.backend-test.result == 'success' && '+ ' || (needs.backend-test.result == 'failure' && '- ' || '  ') }}Backend Tests:  ${{ needs.backend-test.result }}
+            ${{ needs.frontend-test.result == 'success' && '+ ' || (needs.frontend-test.result == 'failure' && '- ' || '  ') }}Frontend Tests: ${{ needs.frontend-test.result }}
+            ${{ needs.sonarqube-scan.result == 'success' && '+ ' || (needs.sonarqube-scan.result == 'failure' && '- ' || needs.sonarqube-scan.result == 'skipped' && '# ' || '  ') }}SonarQube:      ${{ needs.sonarqube-scan.result || 'skipped' }}
+            ${{ needs.backend-push.result == 'success' && '+ ' || (needs.backend-push.result == 'failure' && '- ' || '  ') }}Backend Push:   ${{ needs.backend-push.result }}
+            ${{ needs.frontend-push.result == 'success' && '+ ' || (needs.frontend-push.result == 'failure' && '- ' || '  ') }}Frontend Push:  ${{ needs.frontend-push.result }}
+            ```
+            
+            [🔗 Открыть GitHub Actions →](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
