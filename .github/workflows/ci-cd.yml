@@ -6,17 +6,24 @@ on:
   pull_request:
     branches: [ master, develop ]
 
+env:
+  GO_VERSION: '1.25'
+  NODE_VERSION: '20'
+  REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY }}
+
 jobs:
   backend-test:
     name: Backend Test
     runs-on: ubuntu-latest
+    outputs:
+      coverage: ${{ steps.coverage.outputs.value }}
     steps:
       - uses: actions/checkout@v4
       
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.25'
+          go-version: ${{ env.GO_VERSION }}
       
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -30,9 +37,165 @@ jobs:
         working-directory: backend 
         run: go mod download && go mod verify
       
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: backend 
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+      
+      - name: Generate SonarQube test report for Go
+        working-directory: backend
+        run: |
+          # Конвертируем go test output в Generic Test Data format для SonarQube
+          go test -v -json ./... 2>&1 | python3 -c "
+          import sys, json
+          tests = []
+          for line in sys.stdin:
+            try:
+              event = json.loads(line)
+              if event.get('Action') in ['pass', 'fail'] and event.get('Test'):
+                tests.append({
+                  'name': event['Test'],
+                  'status': 'OK' if event['Action'] == 'pass' else 'FAILED',
+                  'duration': 100,  # ms, можно парсить из event['Elapsed']
+                  'file': 'backend/' + event.get('Package', '').replace('/', '_') + '.go'
+                })
+            except: pass
+          print(json.dumps({'tests': tests}))
+          " > sonar-test-report.json
+      
+      - name: Upload coverage and test reports as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-reports
+          path: |
+            backend/coverage.out
+            backend/sonar-test-report.json
+          retention-days: 1
+
+  frontend-test:
+    name: Frontend Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: Install jest-sonar-reporter
+        working-directory: frontend
+        run: npm install --save-dev jest-sonar-reporter
+      
+      - name: Run tests with coverage and SonarQube report
+        working-directory: frontend
+        env:
+          CI: true
+        run: |
+          npm test -- \
+            --coverage \
+            --coverageReporters=lcov \
+            --reporters=default \
+            --reporters=jest-sonar \
+            --watchAll=false \
+            --passWithNoTests
+      
+      - name: Convert Jest report to SonarQube Generic Test Data format
+        working-directory: frontend
+        run: |
+          # jest-sonar создаёт report.xml в JUnit format, конвертируем в Generic Test Data
+          if [ -f "report.xml" ]; then
+            python3 -c "
+            import xml.etree.ElementTree as ET
+            import json
+            import os
+            
+            tree = ET.parse('report.xml')
+            root = tree.getroot()
+            tests = []
+            
+            for testsuite in root.findall('.//testsuite'):
+                for testcase in testsuite.findall('.//testcase'):
+                    test = {
+                        'name': testcase.get('name'),
+                        'file': testcase.get('file', '').replace('frontend/', ''),
+                        'status': 'OK',
+                        'duration': int(float(testcase.get('time', 0)) * 1000)
+                    }
+                    if testcase.find('failure') is not None or testcase.find('error') is not None:
+                        test['status'] = 'FAILED'
+                        failure = testcase.find('failure') or testcase.find('error')
+                        if failure is not None:
+                            test['message'] = failure.get('message', '')[:500]
+                    tests.append(test)
+            
+            with open('sonar-test-report.json', 'w') as f:
+                json.dump({'tests': tests}, f, indent=2)
+            "
+          else
+            # Если report.xml не создан, создаём пустой отчёт
+            echo '{"tests": []}' > sonar-test-report.json
+          fi
+      
+      - name: Upload coverage and test reports as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-reports
+          path: |
+            frontend/coverage/lcov.info
+            frontend/sonar-test-report.json
+          retention-days: 1
+
+  sonarqube-scan:
+    name: SonarQube Security Scan
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Важно для анализа истории и blame
+          
+      - name: Download backend reports
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-reports
+          path: backend
+          
+      - name: Download frontend reports
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-reports
+          path: frontend
+          
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=parking-app
+            -Dsonar.sources=backend,frontend
+            -Dsonar.go.coverage.reportPaths=backend/coverage.out
+            -Dsonar.go.tests.reportPaths=backend/sonar-test-report.json
+            -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
+            -Dsonar.testExecutionReportPaths=frontend/sonar-test-report.json
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.scm.disabled=false
+
+      - name: Quality Gate Check (fallback)
+        if: failure()
+        run: |
+          echo "SonarQube Quality Gate failed!"
+          echo "Проверьте отчёт: ${{ vars.SONAR_HOST_URL }}/dashboard?id=parking-app"
+          exit 1
 
   backend-build:
     name: Backend Build
@@ -44,7 +207,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.25'
+          go-version: ${{ env.GO_VERSION }}
       
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -62,28 +225,6 @@ jobs:
         working-directory: backend 
         run: go build -o parking-server ./cmd/app
 
-  frontend-test:
-    name: Frontend Test
-    needs: backend-build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm install
-      
-      - name: Run tests
-        working-directory: frontend
-        run: npm test -- --coverage --passWithNoTests --watchAll=false --ci
-
   frontend-build:
     name: Frontend Build
     needs: frontend-test
@@ -94,13 +235,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
       
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: npm ci
       
       - name: Build application
         working-directory: frontend
@@ -108,7 +249,7 @@ jobs:
 
   backend-push:
     name: Backend Push to YCR
-    needs: backend-build
+    needs: [backend-build, sonarqube-scan]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -120,25 +261,22 @@ jobs:
         uses: yc-actions/yc-cr-login@v3
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
-          # cr-id: ${{ secrets.YC_CR_ID }}
       
       - name: Build and push backend image
         uses: docker/build-push-action@v5
-        env:
-          CR_REGISTRY: ${{ secrets.YC_REGISTRY }}
         with:
           context: backend
           file: backend/Dockerfile.backend
           push: true
           tags: |
-            cr.yandex/${{ secrets.YC_REGISTRY }}/backend:${{ github.sha }}
-            cr.yandex/${{ secrets.YC_REGISTRY }}/backend:latest
+            ${{ env.REGISTRY }}/backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/backend:latest
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-to: type:gha,mode=max
 
   frontend-push:
     name: Frontend Push to YCR
-    needs: frontend-build
+    needs: [frontend-build, sonarqube-scan]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -150,7 +288,6 @@ jobs:
         uses: yc-actions/yc-cr-login@v2
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
-          # cr-id: ${{ secrets.YC_CR_ID }}
       
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
@@ -159,7 +296,67 @@ jobs:
           file: frontend/Dockerfile.frontend
           push: true
           tags: |
-            cr.yandex/${{ secrets.YC_REGISTRY }}/frontend:${{ github.sha }}
-            cr.yandex/${{ secrets.YC_REGISTRY }}/frontend:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max 
+            ${{ env.REGISTRY }}/frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/frontend:latest
+          cache-from: type:gha
+          cache-to: type:gha,mode=max 
+
+  notify-telegram:
+    name: Notify Telegram
+    runs-on: ubuntu-latest
+    needs: [backend-push, frontend-push, sonarqube-scan]
+    if: always()
+    steps:
+      - name: Determine status and message
+        id: status
+        run: |
+          STATUS="SUCCESS"
+          EMOJI="✅"
+          DETAILS="Все проверки пройдены"
+          
+          if [[ "${{ needs.sonarqube-scan.result }}" == "failure" ]]; then
+            STATUS="FAILED"
+            EMOJI="🛡️"
+            DETAILS="SonarQube Quality Gate не пройден"
+          elif [[ "${{ needs.backend-push.result }}" == "failure" ]]; then
+            STATUS="FAILED"
+            EMOJI="🐹"
+            DETAILS="Ошибка сборки backend"
+          elif [[ "${{ needs.frontend-push.result }}" == "failure" ]]; then
+            STATUS="FAILED"
+            EMOJI="⚛️"
+            DETAILS="Ошибка сборки frontend"
+          fi
+          
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
+          echo "details=$DETAILS" >> $GITHUB_OUTPUT
+
+      - name: Send Telegram notification
+        uses: appleboy/telegram-action@master
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            ${{ steps.status.outputs.emoji }} *CI/CD Pipeline Status*
+            
+            *📦 Репозиторий:* ${{ github.repository }}
+            *🌿 Branch:* ${{ github.ref_name }}
+            *💻 Commit:* [${{ github.sha }}](${{ github.event.head_commit.url }})
+            *👤 Author:* ${{ github.actor }}
+            
+            *📊 Статус:* ${{ steps.status.outputs.status }}
+            *ℹ️ Детали:* ${{ steps.status.outputs.details }}
+            
+            *🔧 Jobs:*
+            • 🧪 Backend Tests: ${{ needs.backend-test.result }}
+            • 🧪 Frontend Tests: ${{ needs.frontend-test.result }}
+            • 🛡️ SonarQube: ${{ needs.sonarqube-scan.result }}
+            • 🔨 Backend Build: ${{ needs.backend-build.result }}
+            • 🔨 Frontend Build: ${{ needs.frontend-build.result }}
+            • 🚀 Deploy Backend: ${{ needs.backend-push.result }}
+            • 🚀 Deploy Frontend: ${{ needs.frontend-push.result }}
+            
+            [🔗 Открыть GitHub Actions](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          disable_notification: false

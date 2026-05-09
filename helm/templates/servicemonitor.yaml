@@ -4,7 +4,7 @@ kind: ServiceMonitor
 metadata:
   name: {{ .Release.Name }}-backend-monitor
   labels:
-    release: prometheus  # Важно: должно совпадать с release Prometheus Operator
+    release: prometheus
 spec:
   selector:
     matchLabels:
