@@ -66,9 +66,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backend-reports
-          path: |
-            backend/coverage.out
-            backend/sonar-test-report.json
+          path: backend/coverage.out
           retention-days: 1
 
   frontend-test:
@@ -144,9 +142,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: frontend-reports
-          path: |
-            frontend/coverage/lcov.info
-            frontend/sonar-test-report.json
+          path: frontend/coverage/lcov.info
           retention-days: 1
 
   sonarqube-scan:
@@ -163,13 +159,13 @@ jobs:
       - name: Download backend reports
         uses: actions/download-artifact@v4
         with:
-          name: backend-reports
+          name: backend-coverate
           path: backend
           
       - name: Download frontend reports
         uses: actions/download-artifact@v4
         with:
-          name: frontend-reports
+          name: frontend-coverage
           path: frontend
           
       - name: SonarQube Scan
@@ -180,11 +176,10 @@ jobs:
         with:
           args: >
             -Dsonar.projectKey=parking-app
+            -Dsonar.organization=pochkachaiki
             -Dsonar.sources=backend,frontend
             -Dsonar.go.coverage.reportPaths=backend/coverage.out
-            -Dsonar.go.tests.reportPaths=backend/sonar-test-report.json
             -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
-            -Dsonar.testExecutionReportPaths=frontend/sonar-test-report.json
             -Dsonar.qualitygate.wait=true
             -Dsonar.scm.disabled=false
 
