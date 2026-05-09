@@ -167,6 +167,18 @@ jobs:
         with:
           name: frontend-coverage
           path: frontend
+
+      - name: Test SonarCloud API access
+        run: |
+          echo "Testing SonarCloud API with token..."
+          curl -v -u ${{ secrets.SONAR_TOKEN }}: \
+            "https://sonarcloud.io/api/components/show?component=parking-app&organization=pochkachaiki" \
+            || echo "❌ API call failed"
+    
+          echo "Testing Quality Gate access..."
+          curl -v -u ${{ secrets.SONAR_TOKEN }}: \
+            "https://sonarcloud.io/api/qualitygates/project?projectKey=parking-app&organization=pochkachaiki" \
+            || echo "❌ Quality Gate check failed"
           
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v6
