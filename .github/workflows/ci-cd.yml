@@ -18,7 +18,7 @@ jobs:
     outputs:
       coverage: ${{ steps.coverage.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -73,7 +73,7 @@ jobs:
     name: Frontend Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -152,7 +152,7 @@ jobs:
     # if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # Важно для анализа истории и blame
           
@@ -171,13 +171,13 @@ jobs:
       - name: Test SonarCloud API access
         run: |
           echo "Testing SonarCloud API with token..."
-          curl -v -u ${{ secrets.SONAR_TOKEN }}: \
-            "https://sonarcloud.io/api/components/show?component=parking-app&organization=pochkachaiki" \
+          curl -u ${{ secrets.SONAR_TOKEN }}: \
+            "${{ vars.SONAR_HOST_URL }}/api/components/show?component=parking-app&organization=pochkachaiki" \
             || echo "❌ API call failed"
     
           echo "Testing Quality Gate access..."
-          curl -v -u ${{ secrets.SONAR_TOKEN }}: \
-            "https://sonarcloud.io/api/qualitygates/project?projectKey=parking-app&organization=pochkachaiki" \
+          curl -u ${{ secrets.SONAR_TOKEN }}: \
+            "${{ vars.SONAR_HOST_URL }}/api/qualitygates/project_status?projectKey=parking-app" \
             || echo "❌ Quality Gate check failed"
           
       - name: SonarQube Scan
@@ -187,12 +187,6 @@ jobs:
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
         with:
           args: >
-            -Dsonar.projectKey=parking-app
-            -Dsonar.organization=pochkachaiki
-            -Dsonar.sources=backend,frontend
-            -Dsonar.go.coverage.reportPaths=backend/coverage.out
-            -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
-            -Dsonar.qualitygate.wait=true
             -Dsonar.scm.disabled=false
 
 
@@ -201,7 +195,7 @@ jobs:
     needs: backend-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Set up Go
         uses: actions/setup-go@v4
@@ -229,7 +223,7 @@ jobs:
     needs: frontend-test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -252,7 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -280,7 +274,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
