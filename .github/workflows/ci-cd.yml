@@ -159,7 +159,7 @@ jobs:
       - name: Download backend reports
         uses: actions/download-artifact@v4
         with:
-          name: backend-coverate
+          name: backend-coverage
           path: backend
           
       - name: Download frontend reports
