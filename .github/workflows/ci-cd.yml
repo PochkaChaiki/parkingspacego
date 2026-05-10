@@ -98,7 +98,7 @@ jobs:
           npm test a -- \
             --coverage \
             --coverageReporters=lcov \
-            # --watchAll=false \
+            --watchAll=false \
             # --passWithNoTests
       
       # - name: Convert Jest report to SonarQube Generic Test Data format
