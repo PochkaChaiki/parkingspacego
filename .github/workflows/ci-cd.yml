@@ -86,9 +86,9 @@ jobs:
         working-directory: frontend
         run: npm ci
       
-      - name: Install jest-sonar-reporter
-        working-directory: frontend
-        run: npm install --save-dev jest-sonar-reporter
+      # - name: Install jest-sonar-reporter
+      #   working-directory: frontend
+      #   run: npm install --save-dev jest-sonar-reporter
       
       - name: Run tests with coverage and SonarQube report
         working-directory: frontend
