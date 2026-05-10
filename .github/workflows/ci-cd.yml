@@ -168,23 +168,10 @@ jobs:
           name: frontend-coverage
           path: frontend
 
-      - name: Test SonarCloud API access
-        run: |
-          echo "Testing SonarCloud API with token..."
-          curl -u ${{ secrets.SONAR_TOKEN }}: \
-            "${{ vars.SONAR_HOST_URL }}/api/components/show?component=parking-app&organization=pochkachaiki" \
-            || echo "❌ API call failed"
-    
-          echo "Testing Quality Gate access..."
-          curl -u ${{ secrets.SONAR_TOKEN }}: \
-            "${{ vars.SONAR_HOST_URL }}/api/qualitygates/project_status?projectKey=parking-app" \
-            || echo "❌ Quality Gate check failed"
-          
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v6
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
         with:
           args: >
             -Dsonar.scm.disabled=false
