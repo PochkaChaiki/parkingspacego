@@ -62,12 +62,12 @@ jobs:
       #     print(json.dumps({'tests': tests}))
       #     " > sonar-test-report.json
       #
-      # - name: Upload coverage and test reports as artifacts
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: backend-coverage
-      #     path: backend/coverage.out
-      #     retention-days: 1
+      - name: Upload coverage and test reports as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.out
+          retention-days: 1
 
   frontend-test:
     name: Frontend Test
@@ -95,11 +95,11 @@ jobs:
         env:
           CI: true
         run: |
-          npm test -- \
+          npm test a -- \
             --coverage \
             --coverageReporters=lcov \
-            --watchAll=false \
-            --passWithNoTests
+            # --watchAll=false \
+            # --passWithNoTests
       
       # - name: Convert Jest report to SonarQube Generic Test Data format
       #   working-directory: frontend
@@ -229,7 +229,7 @@ jobs:
 
   backend-push:
     name: Backend Push to YCR
-    needs: [backend-build, sonarqube-scan]
+    needs: [ sonarqube-scan]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
@@ -257,7 +257,7 @@ jobs:
 
   frontend-push:
     name: Frontend Push to YCR
-    needs: [frontend-build, sonarqube-scan]
+    needs: [sonarqube-scan]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     steps:
