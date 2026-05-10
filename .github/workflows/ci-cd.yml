@@ -152,7 +152,7 @@ jobs:
     # if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0  # Важно для анализа истории и blame
           
@@ -169,12 +169,12 @@ jobs:
           path: frontend
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v6
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           args: >
-            -Dsonar.scm.disabled=false
+            "-Dsonar.scm.disabled=false"
 
 
   backend-build:
