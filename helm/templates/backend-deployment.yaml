@@ -34,7 +34,7 @@ spec:
             - name: MONGO_URI
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-mongo-secret
+                  name: {{ .Values.mongodb.auth.existingSecret }} 
                   key: MONGO_URI
             {{- range $key, $value := .Values.backend.env }}
             - name: {{ $key }}

@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: parking-app
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/PochkaChaiki/parkingspacego.git
+    targetRevision: master
+    # If Chart.yaml and values.yaml are in the repository root, use ".".
+    # If they are in a chart folder, for example helm/parking-app, use that path.
+    path: helm/
+    helm:
+      releaseName: parking-app
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: parking-app
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true

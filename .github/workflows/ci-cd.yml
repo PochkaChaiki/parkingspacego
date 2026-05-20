@@ -1,10 +1,14 @@
-name: CI Pipeline
+name: CI + GitOps CD with Argo CD
 
 on:
   push:
     branches: [ master, develop ]
   pull_request:
     branches: [ master, develop ]
+
+permissions:
+  contents: write
+  pull-requests: read
 
 env:
   GO_VERSION: '1.25'
@@ -15,16 +19,12 @@ jobs:
   backend-test:
     name: Backend Test
     runs-on: ubuntu-latest
-    outputs:
-      coverage: ${{ steps.coverage.outputs.value }}
     steps:
       - uses: actions/checkout@v6
-      
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
-      
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -32,37 +32,13 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
             ${{ runner.os }}-go-
-      
       - name: Download dependencies
-        working-directory: backend 
+        working-directory: backend
         run: go mod download && go mod verify
-      
       - name: Run tests with coverage
-        working-directory: backend 
+        working-directory: backend
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
-      
-      # - name: Generate SonarQube test report for Go
-      #   working-directory: backend
-      #   run: |
-      #     # Конвертируем go test output в Generic Test Data format для SonarQube
-      #     go test -v -json ./... 2>&1 | python3 -c "
-      #     import sys, json
-      #     tests = []
-      #     for line in sys.stdin:
-      #       try:
-      #         event = json.loads(line)
-      #         if event.get('Action') in ['pass', 'fail'] and event.get('Test'):
-      #           tests.append({
-      #             'name': event['Test'],
-      #             'status': 'OK' if event['Action'] == 'pass' else 'FAILED',
-      #             'duration': 100,  # ms, можно парсить из event['Elapsed']
-      #             'file': 'backend/' + event.get('Package', '').replace('/', '_') + '.go'
-      #           })
-      #       except: pass
-      #     print(json.dumps({'tests': tests}))
-      #     " > sonar-test-report.json
-      #
-      - name: Upload coverage and test reports as artifacts
+      - name: Upload backend coverage
         uses: actions/upload-artifact@v4
         with:
           name: backend-coverage
@@ -74,23 +50,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
-      
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
-      
-      # - name: Install jest-sonar-reporter
-      #   working-directory: frontend
-      #   run: npm install --save-dev jest-sonar-reporter
-      
-      - name: Run tests with coverage and SonarQube report
+      - name: Run tests with coverage
         working-directory: frontend
         env:
           CI: true
@@ -98,84 +67,13 @@ jobs:
           npm test a -- \
             --coverage \
             --coverageReporters=lcov \
-            --watchAll=false \
-            # --passWithNoTests
-      
-      # - name: Convert Jest report to SonarQube Generic Test Data format
-      #   working-directory: frontend
-      #   run: |
-      #     # jest-sonar создаёт report.xml в JUnit format, конвертируем в Generic Test Data
-      #     if [ -f "report.xml" ]; then
-      #       python3 -c "
-      #       import xml.etree.ElementTree as ET
-      #       import json
-      #       import os
-      #
-      #       tree = ET.parse('report.xml')
-      #       root = tree.getroot()
-      #       tests = []
-      #
-      #       for testsuite in root.findall('.//testsuite'):
-      #           for testcase in testsuite.findall('.//testcase'):
-      #               test = {
-      #                   'name': testcase.get('name'),
-      #                   'file': testcase.get('file', '').replace('frontend/', ''),
-      #                   'status': 'OK',
-      #                   'duration': int(float(testcase.get('time', 0)) * 1000)
-      #               }
-      #               if testcase.find('failure') is not None or testcase.find('error') is not None:
-      #                   test['status'] = 'FAILED'
-      #                   failure = testcase.find('failure') or testcase.find('error')
-      #                   if failure is not None:
-      #                       test['message'] = failure.get('message', '')[:500]
-      #               tests.append(test)
-      #
-      #       with open('sonar-test-report.json', 'w') as f:
-      #           json.dump({'tests': tests}, f, indent=2)
-      #       "
-      #     else
-      #       # Если report.xml не создан, создаём пустой отчёт
-      #       echo '{"tests": []}' > sonar-test-report.json
-      #     fi
-      
-      - name: Upload coverage and test reports as artifacts
+            --watchAll=false
+      - name: Upload frontend coverage
         uses: actions/upload-artifact@v4
         with:
           name: frontend-coverage
           path: frontend/coverage/lcov.info
           retention-days: 1
-
-  sonarqube-scan:
-    name: SonarQube Security Scan
-    runs-on: ubuntu-latest
-    needs: [backend-build, frontend-build]
-    # if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          fetch-depth: 0  # Важно для анализа истории и blame
-          
-      - name: Download backend reports
-        uses: actions/download-artifact@v4
-        with:
-          name: backend-coverage
-          path: backend
-          
-      - name: Download frontend reports
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-coverage
-          path: frontend
-
-      - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            "-Dsonar.scm.disabled=false"
-
 
   backend-build:
     name: Backend Build
@@ -183,26 +81,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: ${{ env.GO_VERSION }}
-      
-      - name: Cache Go modules
-        uses: actions/cache@v4
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
-      
       - name: Download dependencies
-        working-directory: backend 
+        working-directory: backend
         run: go mod download && go mod verify
-      
       - name: Build server binary
-        working-directory: backend 
+        working-directory: backend
         run: go build -o parking-server ./cmd/app
 
   frontend-build:
@@ -211,38 +98,63 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: frontend/package-lock.json
-      
       - name: Install dependencies
         working-directory: frontend
         run: npm ci
-      
       - name: Build application
         working-directory: frontend
         run: npm run build
 
-  backend-push:
-    name: Backend Push to YCR
-    needs: [ sonarqube-scan]
+  sonarqube-scan:
+    name: SonarQube Security Scan
+    needs: [backend-build, frontend-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Download backend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@fd88b7d7ccbaefd23d8f36f73b59db7a3d246602
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.scm.disabled=false
+
+  docker-push:
+    name: Build and Push Images to YCR
+    needs: sonarqube-scan
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v6
-      
+      - name: Set image tag
+        id: meta
+        run: echo "image_tag=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
       - name: Login to Yandex Container Registry
         uses: yc-actions/yc-cr-login@v3
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
-      
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
@@ -250,27 +162,10 @@ jobs:
           file: backend/Dockerfile.backend
           push: true
           tags: |
-            ${{ env.REGISTRY }}/backend:${{ github.sha }}
+            ${{ env.REGISTRY }}/backend:${{ steps.meta.outputs.image_tag }}
             ${{ env.REGISTRY }}/backend:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-  frontend-push:
-    name: Frontend Push to YCR
-    needs: [sonarqube-scan]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    steps:
-      - uses: actions/checkout@v6
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Login to Yandex Container Registry
-        uses: yc-actions/yc-cr-login@v2
-        with:
-          yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
-      
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
         with:
@@ -278,73 +173,69 @@ jobs:
           file: frontend/Dockerfile.frontend
           push: true
           tags: |
-            ${{ env.REGISTRY }}/frontend:${{ github.sha }}
+            ${{ env.REGISTRY }}/frontend:${{ steps.meta.outputs.image_tag }}
             ${{ env.REGISTRY }}/frontend:latest
           cache-from: type=gha
-          cache-to: type=gha,mode=max 
+          cache-to: type=gha,mode=max
+
+  update-gitops-values:
+    name: Update Helm Values for Argo CD
+    needs: docker-push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install yq
+        uses: mikefarah/yq@v4.44.3
+      - name: Update image tags in values.yaml
+        run: |
+          yq -i '.backend.image = "backend:${{ needs.docker-push.outputs.image_tag }}"' values.yaml
+          yq -i '.frontend.image = "frontend:${{ needs.docker-push.outputs.image_tag }}"' values.yaml
+      - name: Commit GitOps image tag update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add values.yaml
+          git commit -m "cd: deploy image ${{ needs.docker-push.outputs.image_tag }}" || exit 0
+          git push
 
   notify-telegram:
     name: Notify Telegram
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-test, backend-build, frontend-build, backend-push, frontend-push, sonarqube-scan]
+    needs: [backend-test, frontend-test, backend-build, frontend-build, sonarqube-scan, docker-push, update-gitops-values]
     if: always()
-    
     steps:
-      # === ЕДИНСТВЕННЫЙ ШАГ: определяем статус через env-переменные ===
       - name: Calculate pipeline status
         id: status
         env:
-          # Передаём результаты всех job'ов как env-переменные
-          # (они вычисляются GitHub Actions ДО запуска шага)
           BACKEND_TEST: ${{ needs.backend-test.result }}
           FRONTEND_TEST: ${{ needs.frontend-test.result }}
           BACKEND_BUILD: ${{ needs.backend-build.result }}
           FRONTEND_BUILD: ${{ needs.frontend-build.result }}
-          BACKEND_PUSH: ${{ needs.backend-push.result }}
-          FRONTEND_PUSH: ${{ needs.frontend-push.result }}
           SONAR_SCAN: ${{ needs.sonarqube-scan.result }}
+          DOCKER_PUSH: ${{ needs.docker-push.result }}
+          GITOPS_UPDATE: ${{ needs.update-gitops-values.result }}
         run: |
-          # === Инициализируем как УСПЕХ ===
           FINAL_STATUS="success"
           EMOJI="✅"
-          DETAILS="✅ Все этапы пайплайна пройдены"
+          DETAILS="✅ CI passed, images pushed, GitOps values updated. Argo CD will sync automatically."
           FAILED_JOB=""
-          
-          # === Проверяем в порядке приоритета: тесты → анализ → сборка → деплой ===
-          
-          # 1. Тесты (критично)
-          if [[ "$BACKEND_TEST" == "failure" ]]; then
-            FINAL_STATUS="failure"; EMOJI="🐹"; DETAILS="❌ Backend tests failed"; FAILED_JOB="backend-test"
-          elif [[ "$FRONTEND_TEST" == "failure" ]]; then
-            FINAL_STATUS="failure"; EMOJI="⚛️"; DETAILS="❌ Frontend tests failed"; FAILED_JOB="frontend-test"
-          
-          # 2. SonarQube (если запускался и упал)
-          elif [[ "$SONAR_SCAN" == "failure" ]]; then
-            FINAL_STATUS="failure"; EMOJI="🛡️"; DETAILS="❌ SonarQube Quality Gate failed"; FAILED_JOB="sonarqube-scan"
-          
-          # 3. Сборка
-          elif [[ "$BACKEND_BUILD" == "failure" ]]; then
-            FINAL_STATUS="failure"; EMOJI="🔨"; DETAILS="❌ Backend build failed"; FAILED_JOB="backend-build"
-          elif [[ "$FRONTEND_BUILD" == "failure" ]]; then
-            FINAL_STATUS="failure"; EMOJI="🔨"; DETAILS="❌ Frontend build failed"; FAILED_JOB="frontend-build"
-          
-          # 4. Деплой в registry
-          elif [[ "$BACKEND_PUSH" == "failure" ]]; then
-            FINAL_STATUS="failure"; EMOJI="🚀"; DETAILS="❌ Backend push to YCR failed"; FAILED_JOB="backend-push"
-          elif [[ "$FRONTEND_PUSH" == "failure" ]]; then
-            FINAL_STATUS="failure"; EMOJI="🚀"; DETAILS="❌ Frontend push to YCR failed"; FAILED_JOB="frontend-push"
-          fi
-          
-          # === Выводим результаты в GITHUB_OUTPUT (только один раз!) ===
-          echo "status=$FINAL_STATUS" >> $GITHUB_OUTPUT
-          echo "emoji=$EMOJI" >> $GITHUB_OUTPUT
-          echo "details=$DETAILS" >> $GITHUB_OUTPUT
-          echo "failed_job=$FAILED_JOB" >> $GITHUB_OUTPUT
-          
-          # === Лог для отладки в GitHub Actions ===
-          echo "🔍 Debug: BACKEND_TEST=$BACKEND_TEST, SONAR_SCAN=$SONAR_SCAN, FINAL_STATUS=$FINAL_STATUS"
 
-      # === ОТПРАВКА УВЕДОМЛЕНИЯ ===
+          if [[ "$BACKEND_TEST" == "failure" ]]; then FINAL_STATUS="failure"; EMOJI="🐹"; DETAILS="❌ Backend tests failed"; FAILED_JOB="backend-test";
+          elif [[ "$FRONTEND_TEST" == "failure" ]]; then FINAL_STATUS="failure"; EMOJI="⚛️"; DETAILS="❌ Frontend tests failed"; FAILED_JOB="frontend-test";
+          elif [[ "$BACKEND_BUILD" == "failure" ]]; then FINAL_STATUS="failure"; EMOJI="🔨"; DETAILS="❌ Backend build failed"; FAILED_JOB="backend-build";
+          elif [[ "$FRONTEND_BUILD" == "failure" ]]; then FINAL_STATUS="failure"; EMOJI="🔨"; DETAILS="❌ Frontend build failed"; FAILED_JOB="frontend-build";
+          elif [[ "$SONAR_SCAN" == "failure" ]]; then FINAL_STATUS="failure"; EMOJI="🛡️"; DETAILS="❌ SonarQube scan failed"; FAILED_JOB="sonarqube-scan";
+          elif [[ "$DOCKER_PUSH" == "failure" ]]; then FINAL_STATUS="failure"; EMOJI="📦"; DETAILS="❌ Docker push failed"; FAILED_JOB="docker-push";
+          elif [[ "$GITOPS_UPDATE" == "failure" ]]; then FINAL_STATUS="failure"; EMOJI="🚀"; DETAILS="❌ GitOps values update failed"; FAILED_JOB="update-gitops-values";
+          fi
+
+          echo "status=$FINAL_STATUS" >> "$GITHUB_OUTPUT"
+          echo "emoji=$EMOJI" >> "$GITHUB_OUTPUT"
+          echo "details=$DETAILS" >> "$GITHUB_OUTPUT"
+          echo "failed_job=$FAILED_JOB" >> "$GITHUB_OUTPUT"
       - name: Send Telegram notification
         uses: appleboy/telegram-action@master
         with:
@@ -353,21 +244,11 @@ jobs:
           format: markdown
           disable_web_page_preview: true
           message: |
-            ${{ steps.status.outputs.emoji }} *CI/CD Pipeline: ${{ steps.status.outputs.status == 'failure' && '🔴 FAILED' || '🟢 SUCCESS' }}*
-            
+            ${{ steps.status.outputs.emoji }} *CI/CD with Argo CD: ${{ steps.status.outputs.status == 'failure' && '🔴 FAILED' || '🟢 SUCCESS' }}*
+
             *📦* ${{ github.repository }} | *🌿* ${{ github.ref_name }}
             *💻* [${{ github.sha }}](${{ github.event.head_commit.url }}) | *👤* ${{ github.actor }}
-            
-            *📋 Результат:* ${{ steps.status.outputs.details }}
-            ${{ steps.status.outputs.failed_job != '' && format('*⚠️ Упал джоб:* `{0}`', steps.status.outputs.failed_job) || '' }}
-            
-            *🔧 Статусы джобов:*
-            ```diff
-            ${{ needs.backend-test.result == 'success' && '+ ' || (needs.backend-test.result == 'failure' && '- ' || '  ') }}Backend Tests:  ${{ needs.backend-test.result }}
-            ${{ needs.frontend-test.result == 'success' && '+ ' || (needs.frontend-test.result == 'failure' && '- ' || '  ') }}Frontend Tests: ${{ needs.frontend-test.result }}
-            ${{ needs.sonarqube-scan.result == 'success' && '+ ' || (needs.sonarqube-scan.result == 'failure' && '- ' || needs.sonarqube-scan.result == 'skipped' && '# ' || '  ') }}SonarQube:      ${{ needs.sonarqube-scan.result || 'skipped' }}
-            ${{ needs.backend-push.result == 'success' && '+ ' || (needs.backend-push.result == 'failure' && '- ' || '  ') }}Backend Push:   ${{ needs.backend-push.result }}
-            ${{ needs.frontend-push.result == 'success' && '+ ' || (needs.frontend-push.result == 'failure' && '- ' || '  ') }}Frontend Push:  ${{ needs.frontend-push.result }}
-            ```
-            
-            [🔗 Открыть GitHub Actions →](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            *📋 Result:* ${{ steps.status.outputs.details }}
+            ${{ steps.status.outputs.failed_job != '' && format('*⚠️ Failed job:* `{0}`', steps.status.outputs.failed_job) || '' }}
+
+            [🔗 Open GitHub Actions →](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})

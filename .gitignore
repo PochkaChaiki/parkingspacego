@@ -42,12 +42,14 @@ public/
 
 # terraform/
 *.tfstate*
-init.sh
+*.sh
 .terraform/
 .terraform*
 # ansible/
 inventory.ini
 # helm
-values.yaml
+# values.yaml
 coverage/
 
+ci-cd-old.yml
+key.json

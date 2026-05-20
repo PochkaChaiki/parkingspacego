@@ -36,9 +36,15 @@ spec:
               name: mongodb
           env:
             - name: MONGODB_INITDB_ROOT_USERNAME
-              value: {{ .Values.mongodb.auth.rootUser | quote }}
+              valueFrom: 
+                secretKeyRef:
+                  name: {{ .Values.mongodb.auth.existingSecret }}
+                  key: MONGODB_INITDB_ROOT_USERNAME
             - name: MONGODB_INITDB_ROOT_PASSWORD
-              value: {{ .Values.mongodb.auth.rootPassword | quote }}
+              valueFrom: 
+                secretKeyRef:
+                  name: {{ .Values.mongodb.auth.existingSecret }}
+                  key: MONGODB_INITDB_ROOT_PASSWORD
             - name: MONGODB_DATABASE
               value: {{ .Values.mongodb.auth.database | quote }}
             {{- if .Values.mongodb.auth.username }}
