@@ -191,8 +191,8 @@ jobs:
         uses: mikefarah/yq@v4.44.3
       - name: Update image tags in values.yaml
         run: |
-          yq -i '.backend.image = "backend:${{ needs.docker-push.outputs.image_tag }}"' values.yaml
-          yq -i '.frontend.image = "frontend:${{ needs.docker-push.outputs.image_tag }}"' values.yaml
+          yq -i '.backend.image = "backend:${{ needs.docker-push.outputs.image_tag }}"' helm/values.yaml
+          yq -i '.frontend.image = "frontend:${{ needs.docker-push.outputs.image_tag }}"' helm/values.yaml
       - name: Commit GitOps image tag update
         run: |
           git config user.name "github-actions[bot]"
