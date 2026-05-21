@@ -10,8 +10,6 @@ spec:
   source:
     repoURL: https://github.com/PochkaChaiki/parkingspacego.git
     targetRevision: master
-    # If Chart.yaml and values.yaml are in the repository root, use ".".
-    # If they are in a chart folder, for example helm/parking-app, use that path.
     path: helm/
     helm:
       releaseName: parking-app

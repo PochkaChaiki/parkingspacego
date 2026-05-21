@@ -250,5 +250,14 @@ jobs:
             *💻* [${{ github.sha }}](${{ github.event.head_commit.url }}) | *👤* ${{ github.actor }}
             *📋 Result:* ${{ steps.status.outputs.details }}
             ${{ steps.status.outputs.failed_job != '' && format('*⚠️ Failed job:* `{0}`', steps.status.outputs.failed_job) || '' }}
-
+            *🔧 Jobs status:*
+            ```diff
+            ${{ needs.backend-test.result == 'success' && '+ ' || (needs.backend-test.result == 'failure' && '- ' || '  ') }}Backend Tests:  ${{ needs.backend-test.result }}
+            ${{ needs.frontend-test.result == 'success' && '+ ' || (needs.frontend-test.result == 'failure' && '- ' || '  ') }}Frontend Tests: ${{ needs.frontend-test.result }}
+            ${{ needs.backend-build.result == 'success' && '+ ' || (needs.backend-build.result == 'failure' && '- ' || '  ') }}Backend Build: ${{ needs.backend-build.result }}
+            ${{ needs.frontend-build.result == 'success' && '+ ' || (needs.frontend-build.result == 'failure' && '- ' || '  ') }}Frontend Build: ${{ needs.frontend-build.result }}
+            ${{ needs.sonarqube-scan.result == 'success' && '+ ' || (needs.sonarqube-scan.result == 'failure' && '- ' || needs.sonarqube-scan.result == 'skipped' && '# ' || '  ') }}SonarQube:      ${{ needs.sonarqube-scan.result || 'skipped' }}
+            ${{ needs.docker-push.result == 'success' && '+ ' || (needs.docker-push.result == 'failure' && '- ' || '  ') }}DockerFiles Push:   ${{ needs.docker-push.result }}
+            ${{ needs.update-gitops-values.result == 'success' && '+ ' || (needs.update-gitops-values.result == 'failure' && '- ' || '  ') }}Update GitOps values:  ${{ needs.update-gitops-values.result }}
+            ```
             [🔗 Open GitHub Actions →](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
