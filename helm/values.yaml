@@ -1,9 +1,8 @@
 global:
   imageRegistry: cr.yandex/crpm5i3fj81cq0ka0o72
   environment: production
-
 backend:
-  image: backend:latest
+  image: backend:7818b6151969e69ce6cf4ab5d6efdb064a907a68
   replicas: 1
   port: 5005
   resources:
@@ -25,9 +24,8 @@ backend:
     enabled: true
     path: /metrics
     port: 5005
-
 frontend:
-  image: frontend:latest
+  image: frontend:7818b6151969e69ce6cf4ab5d6efdb064a907a68
   replicas: 1
   serviceType: LoadBalancer
   port: 8080
@@ -38,15 +36,13 @@ frontend:
     limits:
       cpu: "200m"
       memory: "256Mi"
-
 mongodb:
   enabled: true
   image:
     registry: cr.yandex/crpm5i3fj81cq0ka0o72
     repository: mongodb-community
-    tag: "latest" 
+    tag: "latest"
     pullPolicy: Always
-  
   auth:
     enabled: true
     existingSecret: parking-mongo-secret
@@ -55,12 +51,10 @@ mongodb:
     usernames: [user1]
     passwords: [user1]
     databases: [parking]
-  
   persistence:
     enabled: true
     size: 10Gi
     storageClass: "yc-network-hdd"
-  
   resources:
     requests:
       cpu: "500m"
@@ -68,22 +62,18 @@ mongodb:
     limits:
       cpu: "1"
       memory: "1Gi"
-  
   service:
     type: ClusterIP
     port: 27017
-  
   securityContext:
     runAsUser: 999
     runAsGroup: 999
     allowPrivilegeEscalation: false
     capabilities:
       drop: ["ALL"]
-  
   podSecurityContext:
     fsGroup: 999
     runAsNonRoot: true
-
 serviceMonitor:
   enabled: true
   interval: 30s
