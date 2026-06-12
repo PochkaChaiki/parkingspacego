@@ -9,6 +9,10 @@ import (
 	"github.com/pochkachaiki/parkingspace/internal/model"
 )
 
+const (
+	userString500 = "internal server error"
+)
+
 type Handler struct {
 	log *log.Logger
 	srv Service
@@ -16,6 +20,14 @@ type Handler struct {
 
 func NewHandler(srv Service, logger *log.Logger) *Handler {
 	return &Handler{srv: srv, log: logger}
+}
+
+func addHeaders(w *http.ResponseWriter) {
+	(*w).Header().Set("Content-Type", "application/json")
+}
+
+func getPhoneFromPath(path string) string {
+	return strings.TrimPrefix(path, "/api/sessions/")
 }
 
 // StartSession обрабатывает POST /api/sessions.
@@ -32,8 +44,8 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 
 	status, err := h.srv.StartSession(r.Context(), req)
 	if err != nil {
-		h.log.Printf("StartSession: service error for  %s: %v", req.PhoneNumber, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.log.Printf("StartSession: service error: %v", err)
+		http.Error(w, userString500, http.StatusInternalServerError)
 		return
 	}
 
@@ -46,7 +58,8 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	addHeaders(&w)
+
 	json.NewEncoder(w).Encode(&model.Response{
 		Status: status,
 	})
@@ -54,12 +67,11 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request) {
 
 // GetSession обрабатывает GET /api/sessions/{phone_number}.
 func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
-	phone := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
-
+	phone := getPhoneFromPath(r.URL.Path)
 	record, err := h.srv.GetSession(r.Context(), phone)
 	if err != nil {
 		h.log.Printf("GetSession: error for %s: %v", phone, err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		http.Error(w, userString500, http.StatusInternalServerError)
 		return
 	}
 
@@ -68,7 +80,7 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
+	addHeaders(&w)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(record)
 }
@@ -76,7 +88,8 @@ func (h *Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 // ProlongSession обрабатывает PATCH /api/sessions/{phone_number}.
 func (h *Handler) ProlongSession(w http.ResponseWriter, r *http.Request) {
 	// Извлекаем phone из пути /api/sessions/{phone}
-	phone := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+
+	phone := getPhoneFromPath(r.URL.Path)
 
 	var req model.ProlongSessionDto
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -85,18 +98,10 @@ func (h *Handler) ProlongSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Парсим duration (например "1h")
-	// duration, err := time.ParseDuration(req.Duration)
-	// if err != nil {
-	// h.log.Printf("ProlongSession: invalid duration format '%s' for %s: %v", req.Duration, phone, err)
-	// http.Error(w, "invalid duration format", http.StatusBadRequest)
-	// return
-	// }
-
 	updated, err := h.srv.ProlongSession(r.Context(), phone, req.Duration)
 	if err != nil {
 		h.log.Printf("ProlongSession: service error for %s: %v", phone, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, userString500, http.StatusInternalServerError)
 		return
 	}
 
@@ -105,20 +110,19 @@ func (h *Handler) ProlongSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// newEndTime := updated.EndTime.Format("2006-01-02 15:04:05")
-
-	w.Header().Set("Content-Type", "application/json")
+	addHeaders(&w)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(updated)
 }
 
 // StopSession обрабатывает DELETE /api/sessions/{phone_number}.
 func (h *Handler) StopSession(w http.ResponseWriter, r *http.Request) {
-	phone := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+
+	phone := getPhoneFromPath(r.URL.Path)
 
 	if err := h.srv.StopSession(r.Context(), phone); err != nil {
 		h.log.Printf("StopSession: service error for %s: %v", phone, err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, userString500, http.StatusInternalServerError)
 		return
 	}
 
@@ -126,14 +130,8 @@ func (h *Handler) StopSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // Health обрабатывает GET /health для healthchecks
-func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
-}
-
-func (h *Handler) Ready(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
+	addHeaders(&w)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"status":"ok"}`))
 }

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { prolongSession } from '@/lib/apiClient';
 import styles from './ProlongSession.module.css';
+import PropTypes from 'prop-types';
 
 export default function ProlongSession({ onSuccess }) {
   const [formData, setFormData] = useState({
@@ -91,4 +92,8 @@ export default function ProlongSession({ onSuccess }) {
       </button>
     </form>
   );
+}
+
+ProlongSession.propTypes = {
+  onSuccess: PropTypes.func.isRequired,
 }

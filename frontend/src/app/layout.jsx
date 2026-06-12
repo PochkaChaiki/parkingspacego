@@ -1,5 +1,6 @@
 import React from 'react';
 import './globals.css';
+import PropTypes from 'prop-types';
 
 export const metadata = {
   title: 'Parking Management System',
@@ -13,3 +14,7 @@ export default function RootLayout({ children }) {
     </html>
   );
 }
+
+RootLayout.propTypes = {
+  children: PropTypes.node.isRequired,
+};

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { createSession } from '@/lib/apiClient';
 import styles from './CreateSessionForm.module.css';
+import PropTypes from 'prop-types';
 
 export default function CreateSessionForm({ onSuccess }) {
   const [formData, setFormData] = useState({
@@ -43,7 +44,7 @@ export default function CreateSessionForm({ onSuccess }) {
       // Convert spot_number to number
       const submitData = {
         ...formData,
-        spot_number: parseInt(formData.spot_number, 10),
+        spot_number: Number.parseInt(formData.spot_number, 10),
       };
 
       // Remove empty duration field
@@ -164,4 +165,8 @@ export default function CreateSessionForm({ onSuccess }) {
       </button>
     </form>
   );
+}
+
+CreateSessionForm.propTypes = {
+  onSuccess: PropTypes.func.isRequired,
 }

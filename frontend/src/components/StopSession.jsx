@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { stopSession } from '@/lib/apiClient';
 import styles from './StopSession.module.css';
+import PropTypes from 'prop-types';
 
 export default function StopSession({ onSuccess }) {
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -42,7 +43,27 @@ export default function StopSession({ onSuccess }) {
 
       {error && <div className={styles.error}>{error}</div>}
 
-      {!showConfirm ? (
+      {showConfirm ?  (
+        <div className={styles.confirmation}>
+          <p>Are you sure you want to stop the session for {phoneNumber}?</p>
+          <div className={styles.buttonGroup}>
+            <button
+              onClick={() => setShowConfirm(false)}
+              disabled={isLoading}
+              className={styles.cancelButton}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleStop}
+              disabled={isLoading}
+              className={styles.confirmButton}
+            >
+              {isLoading ? 'Stopping...' : 'Confirm Stop'}
+            </button>
+          </div>
+        </div>
+      ) : (
         <form onSubmit={handleSubmit} className={styles.form}>
           <div className={styles.formGroup}>
             <label htmlFor="phone_number">Phone Number</label>
@@ -64,27 +85,11 @@ export default function StopSession({ onSuccess }) {
             {isLoading ? 'Processing...' : 'Stop Session'}
           </button>
         </form>
-      ) : (
-        <div className={styles.confirmation}>
-          <p>Are you sure you want to stop the session for {phoneNumber}?</p>
-          <div className={styles.buttonGroup}>
-            <button
-              onClick={() => setShowConfirm(false)}
-              disabled={isLoading}
-              className={styles.cancelButton}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleStop}
-              disabled={isLoading}
-              className={styles.confirmButton}
-            >
-              {isLoading ? 'Stopping...' : 'Confirm Stop'}
-            </button>
-          </div>
-        </div>
-      )}
+      ) }
     </div>
   );
+}
+
+StopSession.propTypes = {
+  onSuccess: PropTypes.func.isRequired,
 }

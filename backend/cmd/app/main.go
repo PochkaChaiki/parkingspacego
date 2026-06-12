@@ -67,10 +67,10 @@ func main() {
 	mux := http.NewServeMux()
 
 	// Health check
-	mux.HandleFunc("GET /health", h.Health)
+	mux.HandleFunc("GET /health", h.HealthCheck)
 
 	// Ready check
-	mux.HandleFunc("GET /ready", h.Ready)
+	mux.HandleFunc("GET /ready", h.HealthCheck)
 
 	// POST /api/sessions - create session
 	mux.HandleFunc("POST /api/sessions", metrics.PrometheusMiddleware("StartSession", h.StartSession))

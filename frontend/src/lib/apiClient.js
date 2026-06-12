@@ -12,8 +12,8 @@
  * @throws {Error} - If date is invalid
  */
 export function formatDateTimeForAPI(date) {
-  if (!(date instanceof Date) || isNaN(date)) {
-    throw new Error('Invalid date');
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    throw new TypeError('Invalid date');
   }
   return date.toISOString();
 }
@@ -37,7 +37,7 @@ export function formatDateTimeForDisplay(date) {
     if (typeof date === 'string') {
       date = new Date(date);
     }
-    if (!(date instanceof Date) || isNaN(date)) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
       return 'N/A';
     }
     const pad = (n) => String(n).padStart(2, '0');
