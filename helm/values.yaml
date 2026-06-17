@@ -2,7 +2,7 @@ global:
   imageRegistry: cr.yandex/crpm5i3fj81cq0ka0o72
   environment: production
 backend:
-  image: backend:12b96433c86b39e0f51e9de5dd6b0e775046d4e7
+  image: backend:e9b95dcd0a25588e2a301d7a56b5d64c04c6c26c
   replicas: 1
   port: 5005
   resources:
@@ -25,7 +25,7 @@ backend:
     path: /metrics
     port: 5005
 frontend:
-  image: frontend:12b96433c86b39e0f51e9de5dd6b0e775046d4e7
+  image: frontend:e9b95dcd0a25588e2a301d7a56b5d64c04c6c26c
   replicas: 1
   serviceType: LoadBalancer
   port: 8080
