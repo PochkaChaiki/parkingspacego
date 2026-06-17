@@ -47,6 +47,7 @@ jobs:
 
   frontend-test:
     name: Frontend Test
+    needs: backend-build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -113,7 +114,8 @@ jobs:
 
   sonarqube-scan:
     name: SonarQube Security Scan
-    needs: [backend-build, frontend-build]
+    needs: frontend-build
+    # needs: [backend-build, frontend-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
